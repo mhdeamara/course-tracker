@@ -10,7 +10,12 @@
     try { raw = localStorage.getItem(KEY); } catch (e) { console.warn('localStorage unavailable', e); }
     if (raw) {
       try {
-        s.state = CT.model.migrate(JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        // before the first automatic upgrade to a newer schema: keep an untouched copy (only once)
+        if ((Number(parsed.version) || 1) < CT.model.VERSION) {
+          try { if (!localStorage.getItem(CT.model.BACKUP_KEY)) localStorage.setItem(CT.model.BACKUP_KEY, raw); } catch (_) { /* storage full: upgrade anyway */ }
+        }
+        s.state = CT.model.migrate(parsed);
         s.persist(true); // save any one-time upgrades (dates, colors, cleanup) right away
         return 'loaded';
       } catch (e) {
@@ -76,7 +81,14 @@
 
   /* ---------- lookups ---------- */
   s.course = (id) => s.state.courses.find((c) => c.id === id);
-  s.activeCourses = () => s.state.courses.filter((c) => !c.archived);
+  /** Courses of the active semester (and ones without a semester): not archived, not past "record" courses. */
+  s.semesterCourses = () => {
+    const act = s.state.settings.activeSemesterId;
+    const known = act && s.state.semesters.some((x) => x.id === act);
+    return s.state.courses.filter((c) => !c.archived && c.kind !== 'record' && (!known || !c.semesterId || c.semesterId === act));
+  };
+  /** What the dashboard's urgent list, countdown, timetable, review and timer use: active semester, not finished. */
+  s.activeCourses = () => s.semesterCourses().filter((c) => !CT.model.isFinished(c));
   s.semester = (id) => s.state.semesters.find((x) => x.id === id);
   s.findItem = (itemId) => {
     for (const course of s.state.courses) {

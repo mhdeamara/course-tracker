@@ -4,7 +4,22 @@
   const u = CT.u;
   const m = {};
 
-  m.VERSION = 1;
+  m.VERSION = 2; // 2: semester year/term, course kind/outcome, GPA settings
+  m.BACKUP_KEY = 'ct.backup.pre-v2'; // untouched copy of the data, saved right before the v1 → v2 upgrade
+
+  m.TERMS = { winter: 'חורף', spring: 'אביב', summer: 'קיץ' };
+  m.TERM_ORDER = ['winter', 'spring', 'summer'];
+  /** How a finished course ended. */
+  m.OUTCOMES = {
+    graded: { label: 'עם ציון', short: 'הושלם' },
+    pass: { label: 'עובר (ללא ציון מספרי)', short: 'עובר' },
+    exempt: { label: 'פטור', short: 'פטור' },
+    failed: { label: 'נכשל', short: 'נכשל' },
+    withdrawn: { label: 'נטש / ביטל', short: 'נטש' },
+  };
+  m.REQ_CATS = { mandatory: 'חובה', faculty: 'בחירה פקולטית', lab: 'מעבדות', free: 'בחירה חופשית / אחר' };
+  /** Default GPA rules — each one can be changed in settings. */
+  m.DEFAULT_GPA = { repeat: 'last', failedInAvg: true, passGrade: 55, exemptCredits: true, decimals: 2 };
 
   m.STATUSES = {
     todo: { label: 'לא התחלתי', short: 'לא התחלתי' },
@@ -44,9 +59,30 @@
     id: u.uid(), name: 'קורס חדש', number: '', semesterId: '', color: m.COLORS[0], staff: '', credits: '',
     links: [], description: '', categories: [], exams: [], schedule: [], notebook: [],
     grade: { components: [], target: 85 }, archived: false, sample: false,
+    kind: 'full',        // 'full' = tracked with items; 'record' = past course, grade only
+    outcome: null,       // null = in progress; else { type, grade, date, note, exemptCredits }
+    reqCategory: '',     // '' = from the catalog by course number; else a key of m.REQ_CATS
+    gpaExclude: false,   // leave out of the GPA and credit calculations
   }, extra);
 
-  m.newSemester = (extra = {}) => Object.assign({ id: u.uid(), name: 'סמסטר חדש', start: '', end: '', examStart: '' }, extra);
+  m.newSemester = (extra = {}) => Object.assign({ id: u.uid(), name: 'סמסטר חדש', year: null, term: null, start: '', end: '', examStart: '' }, extra);
+  /** "חורף תשפ״ז" */
+  m.semName = (term, year) => `${m.TERMS[term] || ''} ${year ? u.hebYear(year) : ''}`.trim();
+  /** Sort key: academic year, then winter → spring → summer. Semesters without a year go last. */
+  m.semKey = (s) => (s && s.year ? s.year * 10 + Math.max(0, m.TERM_ORDER.indexOf(s.term)) : 99999);
+  m.sortedSemesters = (sems) => sems.slice().sort((a, b) => m.semKey(a) - m.semKey(b));
+  /** Read the term and year out of a free-text name like "חורף תשפ״ז" or "אביב 5786". */
+  m.parseSemName = (name) => {
+    const s = String(name || '');
+    const term = Object.keys(m.TERMS).find((k) => s.includes(m.TERMS[k])) || null;
+    let year = null;
+    const num = s.match(/5\d{3}/);
+    if (num) year = Number(num[0]);
+    else s.split(/[\s—–\-,()]+/).some((w) => { const y = u.parseHebYear(w); if (y && w.length > 2) year = y; return !!year; });
+    return { term, year };
+  };
+  /** True once the course has a final outcome. */
+  m.isFinished = (c) => !!(c && c.outcome && c.outcome.type);
 
   /** Generate `count` items from a pattern like "תרגול {n}" starting at `start`. */
   m.makeItems = (pattern, count, start = 1) => {
@@ -88,6 +124,7 @@
       pomodoro: { work: 25, brk: 5 },
       samplesRemoved: true,
       catalog: { faculty: 'ee', year: null }, // null = not chosen yet → newest catalog, with a warning
+      gpa: Object.assign({}, m.DEFAULT_GPA),
     },
     meta: { createdAt: new Date().toISOString(), updatedAt: null },
   });
@@ -95,7 +132,7 @@
   /* ---------- first-run data: one empty semester; courses are added from the catalog page ---------- */
   m.initialData = () => {
     const st = m.emptyState();
-    const sem = m.newSemester({ name: 'חורף תשפ״ז', ...m.WINTER_5787 });
+    const sem = m.newSemester({ name: 'חורף תשפ״ז', year: 5787, term: 'winter', ...m.WINTER_5787 });
     st.semesters.push(sem);
     st.settings.activeSemesterId = sem.id;
     return st;
@@ -107,11 +144,19 @@
     const base = m.emptyState();
     const st = Object.assign(base, data);
     st.settings = Object.assign(m.emptyState().settings, data.settings || {});
+    st.settings.gpa = Object.assign({}, m.DEFAULT_GPA, (data.settings && data.settings.gpa) || {});
+    if (Number(data.version) > m.VERSION) st.meta.newerSchema = Number(data.version); // saved by a newer app version
     st.meta = Object.assign(m.emptyState().meta, data.meta || {});
     st.semesters = Array.isArray(st.semesters) ? st.semesters : [];
     // replace the placeholder dates from the first version with the official ones
     st.semesters.forEach((s) => {
       if (s.start === OLD_GUESS.start && s.end === OLD_GUESS.end) Object.assign(s, m.WINTER_5787);
+      // v2: academic year + term, read once from the name when the fields are missing
+      if (!('year' in s) || !('term' in s)) {
+        const p = m.parseSemName(s.name);
+        if (!('year' in s)) s.year = p.year;
+        if (!('term' in s)) s.term = p.term;
+      }
     });
     st.studyLog = Array.isArray(st.studyLog) ? st.studyLog : [];
     // one-time cleanup: remove the sample courses that the first version created
@@ -126,6 +171,13 @@
       const oi = OLD_COLORS.indexOf(String(nc.color).toLowerCase());
       if (oi >= 0) nc.color = m.COLORS[oi];
       nc.grade = Object.assign({ components: [], target: 85 }, c.grade || {});
+      if (nc.kind !== 'record') nc.kind = 'full';
+      if (nc.outcome && !(nc.outcome.type in m.OUTCOMES)) nc.outcome = null;
+      if (nc.outcome) {
+        const g = nc.outcome.grade;
+        nc.outcome = Object.assign({ date: '', note: '', exemptCredits: true }, nc.outcome,
+          { grade: g === '' || g == null || !isFinite(Number(g)) ? null : Number(g) });
+      }
       ['links', 'exams', 'schedule', 'notebook', 'categories'].forEach((k) => { if (!Array.isArray(nc[k])) nc[k] = []; });
       nc.categories = nc.categories.map((cat) => ({
         id: cat.id || u.uid(), name: cat.name || 'קטגוריה',
@@ -133,7 +185,7 @@
       }));
       return nc;
     });
-    st.version = m.VERSION;
+    st.version = Math.max(m.VERSION, Number(data.version) || 0);
     return st;
   };
 

@@ -47,7 +47,7 @@
           </div>
         </div>
         <div class="course-grid">
-          ${courses.map(cardHTML).join('') || ui.empty('אין קורסים פעילים. <a class="btn btn-primary" href="#/catalog">בחר מתכנית הלימודים</a> <button class="btn" data-action="new-course">קורס ידני</button>')}
+          ${S.semesterCourses().map(cardHTML).join('') || ui.empty('אין קורסים פעילים. <a class="btn btn-primary" href="#/catalog">בחר מתכנית הלימודים</a> <button class="btn" data-action="new-course">קורס ידני</button>')}
         </div>
       </div>`;
 
@@ -158,7 +158,7 @@
       <a class="card course-card" href="#/course/${c.id}" style="--c:${esc(c.color)}">
         <div class="cc-top">
           <div class="cc-title">
-            <h3 dir="auto">${esc(c.name)}</h3>
+            <h3 dir="auto">${esc(c.name)} ${ui.outcomeBadge(c)}</h3>
             <span class="muted small">${[c.number && `<span dir="ltr">${esc(c.number)}</span>`, c.credits && `${esc(c.credits)} נק״ז`].filter(Boolean).join(' · ') || '&nbsp;'}</span>
           </div>
           ${ui.ring(p.pct)}

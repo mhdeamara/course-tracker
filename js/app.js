@@ -12,6 +12,8 @@
     ['schedule', 'מערכת שעות', 'calendar'],
     ['review', 'חזרה למבחן', 'star'],
     ['catalog', 'תכנית לימודים', 'book'],
+    ['semesters', 'סמסטרים', 'layers'],
+    ['grades', 'ממוצע וציונים', 'award'],
     ['stats', 'סטטיסטיקות', 'chart'],
     ['archive', 'ארכיון', 'archive'],
     ['settings', 'הגדרות', 'gear'],
@@ -34,6 +36,7 @@
   }
 
   /* ---------- router ---------- */
+  const viewKey = (route) => (route === 'grades' ? 'gpa' : route); // route name → CT.views key
   const parseHash = () => {
     const h = location.hash.replace(/^#\/?/, '');
     const [path, query] = h.split('?');
@@ -55,9 +58,11 @@
       stats: () => views.stats.render(main, params),
       archive: () => views.archive.render(main, params),
       catalog: () => views.catalog.render(main, params),
+      semesters: () => views.semesters.render(main, { id, ...params }),
+      grades: () => views.gpa.render(main, params),
       settings: () => views.settings.render(main, params),
     };
-    const routeKey = route === 'course' ? 'course' : route;
+    const routeKey = route === 'grades' ? 'gpa' : route;
     const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
     fn();
     // nav state
@@ -122,16 +127,17 @@
     sb.innerHTML = `
       <a href="#/" class="sb-brand"><span class="sb-logo" aria-hidden="true">📚</span><span>הקורסים שלי</span></a>
       <nav class="sb-nav">
-        ${NAV.filter(([r]) => r === '' || CT.views[r]).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
+        ${NAV.filter(([r]) => r === '' || CT.views[viewKey(r)]).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
       </nav>
       <div class="sb-section">
-        <div class="sb-title"><span>קורסים</span><button class="icon-btn sb-add" data-sb="new" aria-label="קורס חדש" title="קורס חדש">${icon.plus}</button></div>
+        <div class="sb-title"><span>קורסים${S.semester(S.state.settings.activeSemesterId) ? ` · ${esc(S.semester(S.state.settings.activeSemesterId).name)}` : ''}</span><button class="icon-btn sb-add" data-sb="new" aria-label="קורס חדש" title="קורס חדש">${icon.plus}</button></div>
         <div class="sb-courses">
-          ${S.activeCourses().map((c) => {
+          ${S.semesterCourses().map((c) => {
             const p = CT.stats.courseProgress(c);
             const on = route === 'course' && id === c.id;
-            return `<a href="#/course/${c.id}" class="sb-course${on ? ' active' : ''}" style="--c:${esc(c.color)}" ${on ? 'aria-current="page"' : ''}>
-              <span class="dot"></span><span class="sb-name" dir="auto">${esc(c.name)}</span><span class="sb-pct">${p.pct}%</span></a>`;
+            const fin = CT.model.isFinished(c);
+            return `<a href="#/course/${c.id}" class="sb-course${on ? ' active' : ''}${fin ? ' finished' : ''}" style="--c:${esc(c.color)}" ${on ? 'aria-current="page"' : ''}>
+              <span class="dot"></span><span class="sb-name" dir="auto">${esc(c.name)}</span><span class="sb-pct">${fin ? '✓' : `${p.pct}%`}</span></a>`;
           }).join('')}
         </div>
       </div>
@@ -159,7 +165,7 @@
         </div>
       </div>
       <nav class="nav" aria-label="ניווט ראשי">
-        ${NAV.filter(([r]) => r === '' || CT.views[r]).map(([r, l, ic]) => `<a href="#/${r}" data-route="${r}">${icon[ic]}<span>${l}</span></a>`).join('')}
+        ${NAV.filter(([r]) => r === '' || CT.views[viewKey(r)]).map(([r, l, ic]) => `<a href="#/${r}" data-route="${r}">${icon[ic]}<span>${l}</span></a>`).join('')}
       </nav>`;
     document.getElementById('theme-btn').onclick = () => app.setTheme(isDark() ? 'light' : 'dark');
     document.getElementById('undo-btn').onclick = S.undo;

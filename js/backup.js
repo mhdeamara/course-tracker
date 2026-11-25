@@ -47,6 +47,20 @@
     CT.ui.toast('הגיבוי ירד לתיקיית ההורדות');
   };
 
+  /** The untouched copy saved right before the automatic schema upgrade (null if there was no upgrade). */
+  b.preUpgradeRaw = () => { try { return localStorage.getItem(CT.model.BACKUP_KEY); } catch (e) { return null; } };
+  b.exportPreUpgrade = () => {
+    const raw = b.preUpgradeRaw();
+    if (!raw) { CT.ui.toast('אין גיבוי משדרוג'); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    a.download = 'course-tracker-before-upgrade-v2.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    CT.ui.toast('הגיבוי שלפני השדרוג ירד לתיקיית ההורדות');
+  };
+
   b.importFile = async (file) => {
     try {
       const obj = JSON.parse(await file.text());

@@ -36,6 +36,30 @@ window.CT = window.CT || {};
     if (n < 0) return `באיחור ${-n} ימים`;
     return `בעוד ${n} ימים`;
   };
+  /** Hebrew year (5787) → "תשפ״ז" (thousands omitted, 15/16 written טו/טז). */
+  u.hebYear = (n) => {
+    n = Number(n);
+    if (!(n > 0)) return '';
+    let r = n % 1000;
+    const H = [[400, 'ת'], [300, 'ש'], [200, 'ר'], [100, 'ק'], [90, 'צ'], [80, 'פ'], [70, 'ע'], [60, 'ס'], [50, 'נ'], [40, 'מ'], [30, 'ל'], [20, 'כ'], [10, 'י'], [9, 'ט'], [8, 'ח'], [7, 'ז'], [6, 'ו'], [5, 'ה'], [4, 'ד'], [3, 'ג'], [2, 'ב'], [1, 'א']];
+    let out = '';
+    while (r > 0) {
+      if (r === 15) { out += 'טו'; break; }
+      if (r === 16) { out += 'טז'; break; }
+      const [v, ch] = H.find(([x]) => x <= r);
+      out += ch; r -= v;
+    }
+    return out.length === 1 ? out + '׳' : out.slice(0, -1) + '״' + out.slice(-1);
+  };
+  /** "תשפ״ז" / 'תשפ"ז' / "5787" → 5787 (null if not recognised). */
+  u.parseHebYear = (s) => {
+    s = String(s || '').trim();
+    if (/^5\d{3}$/.test(s)) return Number(s);
+    const clean = s.replace(/[״"׳']/g, '');
+    if (!/^[א-ת]+$/.test(clean)) return null;
+    for (let y = 5600; y < 6000; y++) if (u.hebYear(y).replace(/[״׳]/g, '') === clean) return y;
+    return null;
+  };
   u.DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
   u.DAYS_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
   u.timeToMin = (t) => { if (!t) return 0; const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
@@ -116,6 +140,8 @@ window.CT = window.CT || {};
     download: svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
     upload: svg('<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>'),
     menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+    layers: svg('<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>'),
+    award: svg('<circle cx="12" cy="9" r="5.5"/><path d="M8.5 13.5L7 21l5-2.5 5 2.5-1.5-7.5"/>'),
   };
 
   CT.u = u;

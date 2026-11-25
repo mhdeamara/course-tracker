@@ -198,6 +198,17 @@
   ui.statusPill = (status) => `<span class="pill st-${status}">${u.esc(CT.model.STATUSES[status].label)}</span>`;
   ui.courseDot = (c) => `<span class="dot" style="background:${u.esc(c.color)}"></span>`;
   ui.empty = (msg) => `<div class="empty">${msg}</div>`;
+  /** "הושלם · 87" style badge for a finished course ('' while in progress). */
+  ui.outcomeBadge = (c) => {
+    const o = c && c.outcome;
+    if (!o || !o.type) return '';
+    const M = CT.model;
+    const def = M.OUTCOMES[o.type] || { short: o.type };
+    const g = u.isNum(o.grade) ? ` · ${+o.grade.toFixed(2)}` : '';
+    const passMark = (CT.store && CT.store.state && CT.store.state.settings.gpa.passGrade) || 55;
+    const bad = o.type === 'failed' || o.type === 'withdrawn' || (o.type === 'graded' && u.isNum(o.grade) && o.grade < passMark);
+    return `<span class="pill outcome ${bad ? 'outcome-bad' : 'outcome-ok'}" title="${u.esc(def.label)}${o.note ? ' — ' + u.esc(o.note) : ''}">${u.esc(def.short)}${g}</span>`;
+  };
 
   /** Status choice menu for an item. */
   ui.statusMenu = (anchor, itemId) => {

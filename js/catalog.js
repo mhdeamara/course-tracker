@@ -77,6 +77,18 @@
     return `אין אצלנו קטלוג ${cat.yearLabel(cat.wantedYear)}. הקטלוג המוצג הוא של ${cat.label}, ייתכן שהוא לא מעודכן או לא תואם לשנה שלך.`;
   };
 
+  /** Every course in every catalog year of a faculty (for entering past semesters): number → {num, name, credits}.
+   *  The chosen catalog wins; otherwise the newest year that lists the course. */
+  cat.allCourses = (fac = 'ee') => {
+    const all = (CT.catalogData || {})[fac] || {};
+    const map = new Map();
+    Object.keys(all).map(Number).sort((a, b) => b - a).forEach((y) => {
+      Object.entries(all[y].courses || {}).forEach(([num, c]) => { if (!map.has(num)) map.set(num, { num, name: c.name, credits: c.credits }); });
+    });
+    Object.entries(cat.courses || {}).forEach(([num, c]) => map.set(num, { num, name: c.name, credits: c.credits }));
+    return map;
+  };
+
   /** Course record by number (unknown numbers return a stub). */
   cat.get = (num) => cat.courses && cat.courses[num] || { num, name: num, credits: null };
   /** Groups that contain a course number. */

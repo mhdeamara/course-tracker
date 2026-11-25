@@ -36,6 +36,9 @@
             <button class="btn btn-primary" data-action="export">${icon.download} ייצוא גיבוי (JSON)</button>
             <button class="btn" data-action="import">${icon.upload} ייבוא גיבוי</button>
           </div>
+          ${b.preUpgradeRaw() ? `<p class="small">🛟 לפני השדרוג לגרסה 2 (ציונים וסמסטרים קודמים) נשמר עותק של הנתונים כפי שהיו.
+            לשחזור: מורידים אותו כאן ← <b>ייבוא גיבוי</b> ← בוחרים את הקובץ.</p>
+            <button class="btn btn-small" data-action="pre-upgrade">${icon.download} הורד את הגיבוי שלפני השדרוג</button>` : ''}
           <h3>שמירה אוטומטית לקובץ</h3>
           ${autoState}
         </section>
@@ -44,7 +47,8 @@
 
         <section class="card">
           <h2>📅 סמסטרים</h2>
-          <p class="muted">תאריכי ההתחלה והסיום משמשים לחישוב "קצב צפוי" בסטטיסטיקות. הסמסטר המסומן הוא ברירת המחדל לקורסים חדשים.</p>
+          <p class="muted">תאריכי ההתחלה והסיום משמשים לחישוב "קצב צפוי" בסטטיסטיקות. הסמסטר המסומן הוא הסמסטר הפעיל: הדשבורד והמשימות מתייחסים רק אליו.
+            להוספת סמסטרים מהעבר ולהזנת ציונים — <a href="#/semesters">דף הסמסטרים</a>.</p>
           <div class="sem-list">
             ${st.semesters.map((s) => `
               <div class="sem-row" data-id="${s.id}">
@@ -177,6 +181,7 @@
         CT.app.rerender();
         break;
       case 'export': CT.backup.exportFile(); break;
+      case 'pre-upgrade': CT.backup.exportPreUpgrade(); break;
       case 'import': CT.backup.pickImport(); break;
       case 'connect': CT.backup.connect(); break;
       case 'regrant': CT.backup.regrant(); break;
