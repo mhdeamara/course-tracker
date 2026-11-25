@@ -57,7 +57,7 @@
           <div class="course-head-top">
             <div class="course-ring">${ui.ring(p.pct, 76, 7)}</div>
             <div class="course-title">
-              <h1 dir="auto">${esc(c.name)}${c.sample ? ' <span class="pill pill-muted">דוגמה</span>' : ''}${c.archived ? ' <span class="pill pill-muted">בארכיון</span>' : ''}</h1>
+              <h1 dir="auto">${esc(c.name)}${c.archived ? ' <span class="pill pill-muted">בארכיון</span>' : ''}</h1>
               ${meta ? `<div class="meta">${meta}</div>` : ''}
             </div>
             <div class="head-actions no-print">

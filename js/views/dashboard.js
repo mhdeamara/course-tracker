@@ -15,7 +15,6 @@
     const exams = stats.upcomingExams(courses).slice(0, 6);
     const weekDone = stats.completedSince(courses, u.weekStart()).length;
     const streak = stats.streak(st);
-    const hasSample = st.courses.some((c) => c.sample);
 
     root.innerHTML = `
       <div class="dash">
@@ -44,7 +43,6 @@
         <div class="section-head">
           <h2>הקורסים שלי</h2>
           <div class="toolbar-actions">
-            ${hasSample ? `<button class="btn btn-ghost" data-action="clear-sample">${icon.trash}<span>נקה נתוני דוגמה</span></button>` : ''}
             <button class="btn btn-primary" data-action="new-course">${icon.plus}<span>קורס חדש</span></button>
           </div>
         </div>
@@ -54,6 +52,8 @@
       </div>`;
 
     root.querySelector('.dash').addEventListener('click', onClick);
+    // nothing in the side column yet (no exams / classes) → let "what's urgent" use the full width
+    if (!root.querySelector('.dash-side').children.length) root.querySelector('.dash-top').classList.add('solo');
   };
 
   function bannersHTML() {
@@ -175,19 +175,8 @@
       case 'export': CT.backup.exportFile(); break;
       case 'snooze': CT.backup.snooze(); break;
       case 'regrant': CT.backup.regrant(); break;
-      case 'clear-sample': V.clearSample(); break;
       default: break;
     }
   }
 
-  V.clearSample = async () => {
-    const n = S.state.courses.filter((c) => c.sample).length;
-    if (!(await ui.confirm(`למחוק את ${n} קורסי הדוגמה? הקורסים האמיתיים שלך לא ייפגעו.`, 'נקה', true))) return;
-    S.commit('ניקוי נתוני דוגמה', (st) => {
-      const ids = new Set(st.courses.filter((c) => c.sample).map((c) => c.id));
-      st.courses = st.courses.filter((c) => !c.sample);
-      st.studyLog = st.studyLog.filter((e) => !e.sample && !ids.has(e.courseId));
-    });
-    ui.toast('נתוני הדוגמה נמחקו', { action: { label: 'בטל', fn: S.undo } });
-  };
 })(window.CT);

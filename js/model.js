@@ -1,4 +1,4 @@
-/* model.js — data shapes, defaults, templates, sample data and migrations. No DOM here. */
+/* model.js — data shapes, defaults, templates and migrations. No DOM here. */
 (function (CT) {
   'use strict';
   const u = CT.u;
@@ -14,7 +14,10 @@
   };
   m.STATUS_ORDER = ['todo', 'doing', 'done', 'review'];
 
-  m.COLORS = ['#4f7cff', '#e0663d', '#2f9e74', '#a35bd6', '#d6a21c', '#d1477a', '#2b9bb5', '#7a8a3a', '#8b6a4e', '#5b6cc9'];
+  // Classic, muted palette: navy, burgundy, forest, ochre, plum, teal, rust, slate, olive, walnut
+  m.COLORS = ['#2c4a7a', '#8c2f39', '#2f6b4f', '#b07d2b', '#6b4c7a', '#2a6f77', '#a4552c', '#4f5d6b', '#6d7a3a', '#7a5a45'];
+  // first-version palette → mapped one-to-one onto the classic palette on load
+  const OLD_COLORS = ['#4f7cff', '#e0663d', '#2f9e74', '#a35bd6', '#d6a21c', '#d1477a', '#2b9bb5', '#7a8a3a', '#8b6a4e', '#5b6cc9'];
 
   m.SLOT_TYPES = { lecture: 'הרצאה', tutorial: 'תרגול', lab: 'מעבדה', other: 'אחר' };
 
@@ -83,11 +86,12 @@
       template: JSON.parse(JSON.stringify(m.DEFAULT_TEMPLATE)),
       lastBackup: null, backupSnooze: null, activeSemesterId: '',
       pomodoro: { work: 25, brk: 5 },
+      samplesRemoved: true,
     },
     meta: { createdAt: new Date().toISOString(), updatedAt: null },
   });
 
-  /* ---------- first-run data: real semester ו courses + clearly-marked sample courses ---------- */
+  /* ---------- first-run data: the semester ו courses with a standard structure ---------- */
   m.initialData = () => {
     const st = m.emptyState();
     const sem = m.newSemester({ name: 'סמסטר ו — חורף תשפ״ז', ...m.WINTER_5787 });
@@ -103,74 +107,6 @@
       st.courses.push(c);
     });
 
-    // Sample courses (marked sample:true, removable with one click)
-    const today = u.today();
-    const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
-    const markDone = (items, n, startAgo = 30) => items.slice(0, n).forEach((it, i) => {
-      it.status = 'done'; it.completedAt = daysAgo(Math.max(0, startAgo - i * Math.ceil(startAgo / n)));
-    });
-
-    const sig = m.newCourse({
-      name: 'אותות ומערכות (דוגמה)', number: '00440131', semesterId: sem.id, color: '#4f7cff', sample: true,
-      staff: 'מרצה: פרופ׳ דוגמה · מתרגל: מר דוגמה', credits: 4,
-      description: 'קורס לדוגמה — אפשר למחוק בלחיצה אחת מההגדרות או מהדשבורד.',
-      links: [{ label: 'Moodle', url: 'https://moodle.technion.ac.il' }],
-      exams: [{ id: u.uid(), label: 'מועד א׳', date: u.addDays(today, 23) }, { id: u.uid(), label: 'מועד ב׳', date: u.addDays(today, 60) }],
-    });
-    m.applyTemplate(sig, m.DEFAULT_TEMPLATE);
-    const [lec, tut, hw] = sig.categories;
-    markDone(lec.items, 6, 35); markDone(tut.items, 5, 32); markDone(hw.items, 2, 20);
-    tut.items[2].note = 'התמרת פורייה של מלבן: $\\mathcal{F}\\{\\mathrm{rect}(t)\\} = \\mathrm{sinc}(f)$\nלחזור על תכונת ההזזה.';
-    tut.items[2].flag = true;
-    tut.items[5].status = 'review'; tut.items[5].note = 'קונבולוציה גרפית — לא הבנתי עד הסוף את ההיפוך.';
-    lec.items[6].status = 'doing';
-    hw.items[2].due = u.addDays(today, 3); hw.items[2].status = 'doing'; hw.items[2].tags = ['הגשה'];
-    hw.items[3].due = u.addDays(today, 17);
-    sig.grade = {
-      target: 85,
-      components: [
-        { id: u.uid(), name: 'שיעורי בית', weight: 10, score: 92, mustPass: false, passMin: 55, bonus: false },
-        { id: u.uid(), name: 'בוחן אמצע', weight: 20, score: 78, mustPass: false, passMin: 55, bonus: false },
-        { id: u.uid(), name: 'מבחן סופי', weight: 70, score: null, mustPass: true, passMin: 55, bonus: false },
-        { id: u.uid(), name: 'תרגיל רשות (בונוס)', weight: 3, score: null, mustPass: false, passMin: 0, bonus: true },
-      ],
-    };
-    sig.schedule = [
-      { id: u.uid(), day: 0, start: '10:30', end: '12:30', type: 'lecture', room: 'מאייר 280' },
-      { id: u.uid(), day: 2, start: '14:30', end: '16:30', type: 'tutorial', room: 'מאייר 351' },
-    ];
-    sig.notebook = [
-      { id: u.uid(), title: 'התמרת פורייה', body: '$$X(f) = \\int_{-\\infty}^{\\infty} x(t)\\, e^{-j2\\pi f t}\\, dt$$' },
-      { id: u.uid(), title: 'משפט פרסבל', body: 'אנרגיה נשמרת בין התחומים:\n$$\\int |x(t)|^2 dt = \\int |X(f)|^2 df$$' },
-    ];
-
-    const alg = m.newCourse({
-      name: 'אלגברה 2מ (דוגמה)', number: '01040168', semesterId: sem.id, color: '#2f9e74', sample: true, credits: 3.5,
-      exams: [{ id: u.uid(), label: 'מועד א׳', date: u.addDays(today, 30) }],
-    });
-    m.applyTemplate(alg, [
-      { name: 'הרצאות', count: 13, pattern: 'הרצאה {n}' },
-      { name: 'תרגולים', count: 13, pattern: 'תרגול {n}' },
-      { name: 'תרגילי בית', count: 6, pattern: 'תרגיל בית {n}' },
-    ]);
-    markDone(alg.categories[0].items, 3, 25); markDone(alg.categories[1].items, 2, 20);
-    alg.categories[2].items[1].due = u.addDays(today, -1);
-    alg.categories[2].items[2].due = u.addDays(today, 6);
-    alg.schedule = [{ id: u.uid(), day: 1, start: '08:30', end: '10:30', type: 'lecture', room: 'אולמן 200' }];
-
-    const lab = m.newCourse({ name: 'מעבדה 1א (דוגמה)', semesterId: sem.id, color: '#e0663d', sample: true, credits: 1.5 });
-    lab.categories = m.labCategories(6);
-    markDone(lab.categories[0].items, 3, 28);
-    markDone(lab.categories[1].items, 2, 14);
-    lab.categories[1].items[2].due = u.addDays(today, 2);
-    lab.schedule = [{ id: u.uid(), day: 3, start: '13:30', end: '17:30', type: 'lab', room: 'מאייר 4xx' }];
-
-    st.courses.push(sig, alg, lab);
-
-    // a few study-log entries so the stats page is not empty
-    [[sig, 1, 50], [sig, 2, 75], [alg, 2, 40], [lab, 4, 90], [sig, 5, 25]].forEach(([c, ago, min]) => {
-      st.studyLog.push({ id: u.uid(), courseId: c.id, date: u.addDays(today, -ago), minutes: min, sample: true });
-    });
     return st;
   };
 
@@ -187,8 +123,17 @@
       if (s.start === OLD_GUESS.start && s.end === OLD_GUESS.end) Object.assign(s, m.WINTER_5787);
     });
     st.studyLog = Array.isArray(st.studyLog) ? st.studyLog : [];
+    // one-time cleanup: remove the sample courses that the first version created
+    if (!(data.settings && data.settings.samplesRemoved)) { // check the raw data: defaults already set the flag
+      const ids = new Set(st.courses.filter((c) => c.sample).map((c) => c.id));
+      st.courses = st.courses.filter((c) => !c.sample);
+      st.studyLog = st.studyLog.filter((e) => !e.sample && !ids.has(e.courseId));
+      st.settings.samplesRemoved = true;
+    }
     st.courses = st.courses.map((c) => {
       const nc = Object.assign(m.newCourse(), c);
+      const oi = OLD_COLORS.indexOf(String(nc.color).toLowerCase());
+      if (oi >= 0) nc.color = m.COLORS[oi];
       nc.grade = Object.assign({ components: [], target: 85 }, c.grade || {});
       ['links', 'exams', 'schedule', 'notebook', 'categories'].forEach((k) => { if (!Array.isArray(nc[k])) nc[k] = []; });
       nc.categories = nc.categories.map((cat) => ({

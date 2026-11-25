@@ -87,7 +87,6 @@
         <section class="card">
           <h2>🧹 נתונים</h2>
           <div class="btn-row">
-            ${st.courses.some((c) => c.sample) ? `<button class="btn" data-action="clear-sample">נקה נתוני דוגמה</button>` : ''}
             <button class="btn btn-danger" data-action="reset">מחק הכול והתחל מחדש</button>
           </div>
         </section>
@@ -114,7 +113,6 @@
       case 'del-tpl': S.commit('עריכת תבנית', (st) => st.settings.template.splice(Number(a.closest('.tpl-row').dataset.i), 1)); break;
       case 'reset-tpl': S.commit('איפוס תבנית', (st) => { st.settings.template = JSON.parse(JSON.stringify(M.DEFAULT_TEMPLATE)); }); break;
       case 'help': CT.app.showHelp(); break;
-      case 'clear-sample': CT.views.dashboard.clearSample(); break;
       case 'reset':
         if (!(await ui.confirm('למחוק את כל הנתונים ולהתחיל מאפס?\nמומלץ לייצא גיבוי קודם. אפשר לבטל מיד עם Ctrl+Z.', 'מחק הכול', true))) return;
         S.replace(M.emptyState(), 'מחיקת כל הנתונים');

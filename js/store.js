@@ -9,7 +9,11 @@
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch (e) { console.warn('localStorage unavailable', e); }
     if (raw) {
-      try { s.state = CT.model.migrate(JSON.parse(raw)); return 'loaded'; } catch (e) {
+      try {
+        s.state = CT.model.migrate(JSON.parse(raw));
+        s.persist(true); // save any one-time upgrades (dates, colors, cleanup) right away
+        return 'loaded';
+      } catch (e) {
         console.error('Corrupt data, keeping a copy', e);
         try { localStorage.setItem(KEY + '.corrupt-' + Date.now(), raw); } catch (_) { /* ignore */ }
       }
