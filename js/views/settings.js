@@ -43,6 +43,8 @@
           ${autoState}
         </section>
 
+        ${CT.views.moodle.section()}
+
         ${catalogSection()}
 
         ${gpaSection()}
@@ -195,6 +197,7 @@
   async function onClick(e) {
     const a = e.target.closest('[data-action]');
     if (!a) return;
+    if (a.dataset.action.startsWith('moodle-')) { CT.views.moodle.onClick(a); return; }
     const semId = a.closest('.sem-row') && a.closest('.sem-row').dataset.id;
     switch (a.dataset.action) {
       case 'signup': login('up', a.closest('form')); break;

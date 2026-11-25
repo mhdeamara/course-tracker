@@ -833,3 +833,20 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .gpa-rules .rule-row p { margin: 0; }
 .gpa-rules .rule-row .field { margin: 0; }
 @media (max-width: 640px) { .gpa-rules .rule-row { grid-template-columns: 1fr; } }
+
+/* ---------- Moodle sync ---------- */
+.tag.moodle-tag { background: var(--info-bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+button.tag { font: inherit; font-size: .74rem; border: 0; cursor: pointer; }
+.tag.moodle-alert { background: var(--warn-bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.tag.moodle-merge { background: var(--surface-2); color: var(--text); border: 1px dashed var(--border); }
+button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.moodle-steps { margin: 4px 0 10px; padding-inline-start: 20px; }
+.moodle-steps li { margin-bottom: 2px; }
+.moodle-inbox { display: flex; flex-direction: column; gap: 8px; }
+.moodle-inbox-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.moodle-inbox-row .mi-main { display: flex; flex-direction: column; flex: 1 1 220px; min-width: 0; }
+.moodle-inbox-row select { max-width: 100%; }
+.moodle-maps { margin: 6px 0; padding-inline-start: 20px; }
+.moodle-diff { border-collapse: collapse; width: 100%; margin: 6px 0; }
+.moodle-diff th, .moodle-diff td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.moodle-result { margin: 0; padding-inline-start: 20px; }

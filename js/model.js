@@ -126,6 +126,7 @@
       catalog: { faculty: 'ee', year: null }, // null = not chosen yet → newest catalog, with a warning
       gpa: Object.assign({}, m.DEFAULT_GPA),
     },
+    moodle: CT.moodle.emptyState(), // Moodle sync bookkeeping (no secrets: the calendar link is never stored here)
     meta: { createdAt: new Date().toISOString(), updatedAt: null },
   });
 
@@ -159,6 +160,7 @@
       }
     });
     st.studyLog = Array.isArray(st.studyLog) ? st.studyLog : [];
+    CT.moodle.ensure(st);
     // one-time cleanup: remove the sample courses that the first version created
     if (!(data.settings && data.settings.samplesRemoved)) { // check the raw data: defaults already set the flag
       const ids = new Set(st.courses.filter((c) => c.sample).map((c) => c.id));

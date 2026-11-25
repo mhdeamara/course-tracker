@@ -67,6 +67,11 @@
       out.push(`<div class="banner banner-warn" role="status">⚠️ הנתונים השתנו בשני מכשירים ועדיין לא נבחרה גרסה.
         <button class="btn btn-small btn-primary" data-action="sync-now">פתור עכשיו</button></div>`);
     }
+    const inboxN = S.state.moodle && S.state.moodle.inbox ? S.state.moodle.inbox.length : 0;
+    if (inboxN) {
+      out.push(`<div class="banner banner-info" role="status">📥 ${inboxN === 1 ? 'מטלה אחת ממודל מחכה' : `${inboxN} מטלות ממודל מחכות`} לשיוך לקורס.
+        <button class="btn btn-small btn-primary" data-action="moodle-inbox">לשיוך</button></div>`);
+    }
     if (b.status === 'needs-permission') {
       out.push(`<div class="banner banner-info" role="status">💾 השמירה האוטומטית לקובץ ממתינה לאישור הדפדפן.
         <button class="btn btn-small btn-primary" data-action="regrant">אשר גישה לקובץ</button></div>`);
@@ -184,6 +189,7 @@
       case 'snooze': CT.backup.snooze(); break;
       case 'regrant': CT.backup.regrant(); break;
       case 'sync-now': CT.cloud.syncNow(); break;
+      case 'moodle-inbox': CT.views.moodle.showInbox(); break;
       default: break;
     }
   }

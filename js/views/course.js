@@ -160,6 +160,7 @@
             <span class="title-text" data-action="edit-title" dir="auto">${esc(it.title)}</span>
             ${safeLink ? `<a class="row-link" href="${esc(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="פתח קישור" tabindex="-1">${icon.link}</a>` : ''}
             ${it.tags.map((t) => `<span class="tag" dir="auto">${esc(t)}</span>`).join('')}
+            ${CT.views.moodle.badges(it)}
             ${it.note && !open ? `<div class="note-snippet" data-action="toggle-note" dir="auto">${icon.note}${esc(firstLine)}</div>` : ''}
           </div>
           <div class="row-tools">
@@ -217,6 +218,7 @@
         case 'status-menu': ui.statusMenu(a, id); break;
         case 'edit-due': editDue(id); break;
         case 'row-menu': rowMenu(a, id); break;
+        case 'moodle-changed': case 'moodle-gone': case 'moodle-merge': CT.views.moodle.rowAction(a.dataset.action, id, a); break;
         case 'edit-title': if (e.detail === 1) setTimeout(() => editTitleInline(a, id), 0); break;
         case 'cat-menu': catMenu(a, c, catId); break;
         case 'filter': view.filter = a.dataset.filter; CT.app.rerender(); break;
