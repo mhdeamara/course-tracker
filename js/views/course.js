@@ -57,10 +57,12 @@
           <div class="course-head-top">
             <div class="course-ring">${ui.ring(p.pct, 76, 7)}</div>
             <div class="course-title">
-              <h1 dir="auto">${esc(c.name)}${c.archived ? ' <span class="pill pill-muted">בארכיון</span>' : ''}</h1>
+              <h1 dir="auto">${esc(c.name)} ${ui.outcomeBadge(c)}${c.archived ? ' <span class="pill pill-muted">בארכיון</span>' : ''}</h1>
               ${meta ? `<div class="meta">${meta}</div>` : ''}
+              ${M.isFinished(c) && (c.outcome.date || c.outcome.note) ? `<div class="meta small">${c.outcome.date ? `הסתיים ${u.fmtDateFull(c.outcome.date)}` : ''}${c.outcome.date && c.outcome.note ? ' · ' : ''}<span dir="auto">${esc(c.outcome.note || '')}</span></div>` : ''}
             </div>
             <div class="head-actions no-print">
+              <button class="btn${M.isFinished(c) ? '' : ' btn-primary'}" data-action="finish">${icon.award}<span>${M.isFinished(c) ? 'עריכת הסיום' : 'סיים קורס'}</span></button>
               <button class="btn" data-action="edit-course">${icon.edit}<span>עריכת קורס</span></button>
               <button class="icon-btn" data-action="course-menu" aria-label="פעולות נוספות לקורס">${icon.more}</button>
             </div>
@@ -190,6 +192,7 @@
       const a = e.target.closest('[data-action]');
       if (!a) return;
       if (a.dataset.action === 'edit-course') V.courseForm(c);
+      if (a.dataset.action === 'finish') V.finishDialog(c);
       if (a.dataset.action === 'course-menu') courseMenu(a, c);
     });
     const tabs = root.querySelector('.tabs');
@@ -636,6 +639,62 @@
       const del = e.target.closest('[data-del]');
       if (del) del.closest('.list-row').remove();
     });
+  };
+
+  /* ================= finish course: final grade / outcome ================= */
+  V.finishDialog = (c) => {
+    const o = c.outcome || {};
+    const calc = CT.grades.compute(c.grade);
+    const suggested = u.isNum(calc.final) ? +calc.final.toFixed(2) : null;
+    const rules = S.state.settings.gpa;
+    const isNew = !M.isFinished(c);
+    const typeSel = Object.entries(M.OUTCOMES).map(([k, d]) => `<option value="${k}" ${(o.type || 'graded') === k ? 'selected' : ''}>${d.label}</option>`).join('');
+    const m = ui.modal({
+      title: isNew ? `סיום קורס — ${c.name}` : `עריכת סיום — ${c.name}`,
+      body: `<div class="form-grid">
+        <label class="field"><span>סוג הסיום</span><select name="type">${typeSel}</select></label>
+        <label class="field" data-show="grade"><span>ציון סופי (0–100)</span><input name="grade" type="number" min="0" max="100" step="any" inputmode="decimal" value="${u.isNum(o.grade) ? o.grade : (isNew && suggested != null ? suggested : '')}"></label>
+        <label class="field"><span>תאריך סיום</span><input name="date" type="date" value="${esc(o.date || u.today())}"></label>
+        <label class="field"><span>הערה</span><input name="note" dir="auto" value="${esc(o.note || '')}" placeholder="מועד ב׳, עם בונוס…"></label>
+        <label class="check-field span-2" data-show="exempt"><input type="checkbox" name="exemptCredits" ${(o.exemptCredits ?? rules.exemptCredits) ? 'checked' : ''}> הפטור מקנה נקודות זכות</label>
+      </div>
+      ${suggested != null ? `<p class="small finish-suggest" data-show="grade">לפי רכיבי הציון שהזנת בקורס: <b>${suggested}</b>
+        <button type="button" class="btn btn-small btn-ghost" data-fill>מלא</button><br><span class="muted">הציון הרשמי הוא מה שקובע — אפשר לדרוס ידנית.</span></p>`
+        : (calc.remaining && calc.remaining.length && c.grade.components.length ? `<p class="muted small">חסרים ציונים ב־${calc.remaining.length} רכיבים, לכן אין הצעה מהחישוב.</p>` : '')}
+      <p class="muted small">קורס שהסתיים יוצא מ"מה דחוף" ומהספירה לאחור, אבל נשאר זמין ואפשר לבטל את הסיום בכל רגע.</p>`,
+      actions: [
+        ...(isNew ? [] : [{ label: 'ביטול הסיום', danger: true, fn: () => {
+          S.commit('ביטול סיום קורס', () => { S.course(c.id).outcome = null; });
+          ui.toast('הקורס חזר להיות פעיל', { action: { label: 'בטל', fn: S.undo } });
+        } }]),
+        { label: 'סגור' },
+        { label: isNew ? 'סיים קורס' : 'שמור', primary: true, fn: (api) => {
+          const g = (n) => api.body.querySelector(`[name=${n}]`);
+          const type = g('type').value;
+          const raw = g('grade').value.trim();
+          const grade = raw === '' ? null : Number(raw);
+          if (type === 'graded' && !(grade >= 0 && grade <= 100)) { g('grade').focus(); ui.toast('צריך ציון בין 0 ל־100 (או לבחור סוג סיום אחר)', { error: true }); return false; }
+          if (type === 'failed' && grade != null && !(grade >= 0 && grade <= 100)) { g('grade').focus(); return false; }
+          const outcome = {
+            type, grade: type === 'graded' || type === 'failed' ? grade : null,
+            date: g('date').value, note: g('note').value.trim(), exemptCredits: g('exemptCredits').checked,
+            fromCalc: suggested != null && grade === suggested,
+          };
+          S.commit(isNew ? 'סיום קורס' : 'עריכת סיום', () => { S.course(c.id).outcome = outcome; });
+          ui.toast(isNew ? `"${c.name}" סומן כהושלם` : 'הסיום עודכן', { action: { label: 'בטל', fn: S.undo } });
+          return true;
+        } },
+      ],
+    });
+    const sync = () => {
+      const t = m.body.querySelector('[name=type]').value;
+      m.body.querySelectorAll('[data-show=grade]').forEach((el) => { el.hidden = !(t === 'graded' || t === 'failed'); });
+      m.body.querySelectorAll('[data-show=exempt]').forEach((el) => { el.hidden = t !== 'exempt'; });
+    };
+    m.body.querySelector('[name=type]').addEventListener('change', sync);
+    const fill = m.body.querySelector('[data-fill]');
+    if (fill) fill.onclick = () => { m.body.querySelector('[name=grade]').value = suggested; };
+    sync();
   };
 
   function courseMenu(anchor, c) {

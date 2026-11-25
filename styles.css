@@ -795,3 +795,5 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   .sem-item { grid-template-columns: 1fr; gap: 6px; }
   .semesters .stat-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+.finish-suggest { margin: 10px 0 0; }
