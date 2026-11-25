@@ -18,6 +18,11 @@
 
   m.SLOT_TYPES = { lecture: 'הרצאה', tutorial: 'תרגול', lab: 'מעבדה', other: 'אחר' };
 
+  // Official Technion dates, winter 2026/27 (senate secretariat, updated May 2026):
+  // first day of classes 28.10.2026, last day 28.1.2027.
+  m.WINTER_5787 = { start: '2026-10-28', end: '2027-01-28', examStart: '2027-02-01' };
+  const OLD_GUESS = { start: '2026-10-18', end: '2027-01-22' }; // first-version placeholder
+
   m.DEFAULT_TEMPLATE = [
     { name: 'הרצאות', count: 13, pattern: 'הרצאה {n}' },
     { name: 'תרגולים', count: 13, pattern: 'תרגול {n}' },
@@ -38,7 +43,7 @@
     grade: { components: [], target: 85 }, archived: false, sample: false,
   }, extra);
 
-  m.newSemester = (extra = {}) => Object.assign({ id: u.uid(), name: 'סמסטר חדש', start: '', end: '' }, extra);
+  m.newSemester = (extra = {}) => Object.assign({ id: u.uid(), name: 'סמסטר חדש', start: '', end: '', examStart: '' }, extra);
 
   /** Generate `count` items from a pattern like "תרגול {n}" starting at `start`. */
   m.makeItems = (pattern, count, start = 1) => {
@@ -85,7 +90,7 @@
   /* ---------- first-run data: real semester ו courses + clearly-marked sample courses ---------- */
   m.initialData = () => {
     const st = m.emptyState();
-    const sem = m.newSemester({ name: 'סמסטר ו — חורף תשפ״ז', start: '2026-10-18', end: '2027-01-22' });
+    const sem = m.newSemester({ name: 'סמסטר ו — חורף תשפ״ז', ...m.WINTER_5787 });
     st.semesters.push(sem);
     st.settings.activeSemesterId = sem.id;
 
@@ -177,6 +182,10 @@
     st.settings = Object.assign(m.emptyState().settings, data.settings || {});
     st.meta = Object.assign(m.emptyState().meta, data.meta || {});
     st.semesters = Array.isArray(st.semesters) ? st.semesters : [];
+    // replace the placeholder dates from the first version with the official ones
+    st.semesters.forEach((s) => {
+      if (s.start === OLD_GUESS.start && s.end === OLD_GUESS.end) Object.assign(s, m.WINTER_5787);
+    });
     st.studyLog = Array.isArray(st.studyLog) ? st.studyLog : [];
     st.courses = st.courses.map((c) => {
       const nc = Object.assign(m.newCourse(), c);

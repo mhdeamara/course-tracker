@@ -20,8 +20,13 @@
 </head>
 <body>
   <a class="skip-link" href="#main">דלג לתוכן</a>
-  <header id="app-header" class="app-header"></header>
-  <main id="main" class="main" tabindex="-1"></main>
+  <div class="layout">
+    <aside id="sidebar" class="sidebar" aria-label="ניווט ראשי"></aside>
+    <div class="content">
+      <header id="app-header" class="app-header"></header>
+      <main id="main" class="main" tabindex="-1"></main>
+    </div>
+  </div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <noscript>המערכת צריכה JavaScript כדי לעבוד.</noscript>
 

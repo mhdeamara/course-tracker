@@ -64,6 +64,7 @@
       a.classList.toggle('active', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+    renderSidebar(route, id);
     if (app.lastRoute === location.hash && !params.item) window.scrollTo(0, scrollY);
     app.lastRoute = location.hash;
     if (CT.timer) CT.timer.renderChip();
@@ -79,6 +80,37 @@
   });
 
   /* ---------- header ---------- */
+  /** Desktop sidebar: navigation, quick course list with progress, backup status. */
+  function renderSidebar(route, id) {
+    const sb = document.getElementById('sidebar');
+    const b = CT.backup;
+    const days = b.daysSinceBackup();
+    const backupLine = b.status === 'granted'
+      ? '<span class="sb-dot ok"></span>שמירה אוטומטית פעילה'
+      : b.status === 'needs-permission'
+        ? '<span class="sb-dot warn"></span>שמירה אוטומטית ממתינה לאישור'
+        : days == null ? '<span class="sb-dot warn"></span>עוד לא גובה'
+          : `<span class="sb-dot ${days > 7 ? 'warn' : 'ok'}"></span>גיבוי אחרון ${days === 0 ? 'היום' : days === 1 ? 'אתמול' : `לפני ${days} ימים`}`;
+    sb.innerHTML = `
+      <a href="#/" class="sb-brand"><span class="sb-logo" aria-hidden="true">📚</span><span>הקורסים שלי</span></a>
+      <nav class="sb-nav">
+        ${NAV.filter(([r]) => r === '' || CT.views[r]).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
+      </nav>
+      <div class="sb-section">
+        <div class="sb-title"><span>קורסים</span><button class="icon-btn sb-add" data-sb="new" aria-label="קורס חדש" title="קורס חדש">${icon.plus}</button></div>
+        <div class="sb-courses">
+          ${S.activeCourses().map((c) => {
+            const p = CT.stats.courseProgress(c);
+            const on = route === 'course' && id === c.id;
+            return `<a href="#/course/${c.id}" class="sb-course${on ? ' active' : ''}" style="--c:${esc(c.color)}" ${on ? 'aria-current="page"' : ''}>
+              <span class="dot"></span><span class="sb-name" dir="auto">${esc(c.name)}</span><span class="sb-pct">${p.pct}%</span></a>`;
+          }).join('')}
+        </div>
+      </div>
+      <a href="#/settings" class="sb-foot">${backupLine}</a>`;
+    sb.querySelector('[data-sb=new]').onclick = () => CT.views.course.courseForm();
+  }
+
   function renderHeader() {
     const h = document.getElementById('app-header');
     h.innerHTML = `

@@ -48,7 +48,8 @@
                 <label class="radio" title="סמסטר ברירת מחדל"><input type="radio" name="active" ${s.id === st.settings.activeSemesterId ? 'checked' : ''} aria-label="סמסטר נוכחי"></label>
                 <input name="name" dir="auto" value="${esc(s.name)}" aria-label="שם הסמסטר">
                 <label class="field-inline">התחלה <input type="date" name="start" value="${esc(s.start)}"></label>
-                <label class="field-inline">סיום <input type="date" name="end" value="${esc(s.end)}"></label>
+                <label class="field-inline">סיום לימודים <input type="date" name="end" value="${esc(s.end)}"></label>
+                <label class="field-inline">תחילת מבחנים <input type="date" name="examStart" value="${esc(s.examStart || '')}"></label>
                 <span class="muted small">${counts[s.id] || 0} קורסים</span>
                 <button class="icon-btn" data-action="del-sem" aria-label="מחק סמסטר" ${counts[s.id] ? 'disabled title="יש קורסים בסמסטר"' : ''}>${icon.trash}</button>
               </div>`).join('')}

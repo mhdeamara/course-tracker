@@ -20,6 +20,7 @@
     root.innerHTML = `
       <div class="dash">
         ${bannersHTML()}
+        ${heroHTML(courses, urgent, weekDone, streak)}
         <div class="dash-top">
           <section class="card urgent" aria-labelledby="urgent-h">
             <h2 id="urgent-h">🔥 מה דחוף <span class="muted small">(7 הימים הקרובים)</span></h2>
@@ -30,17 +31,13 @@
               <h2 id="exams-h">⏳ ספירה לאחור</h2>
               <ul class="countdown">${exams.map(({ exam, course }) => {
                 const n = u.daysUntil(exam.date);
-                return `<li style="--c:${esc(course.color)}"><span class="cd-num">${n === 0 ? 'היום' : n}</span>
-                  <span class="cd-text">${n === 0 ? '' : n === 1 ? 'יום ל' : 'ימים ל'}${esc(exam.label || 'מבחן')} ב<a href="#/course/${course.id}">${esc(course.name)}</a>
-                  <span class="muted small">${u.fmtDateFull(exam.date)}</span></span></li>`;
+                return `<li style="--c:${esc(course.color)}">
+                  <span class="cd-num">${n === 0 ? 'היום' : `${n}<small>${n === 1 ? 'יום' : 'ימים'}</small>`}</span>
+                  <span class="cd-text"><a href="#/course/${course.id}" dir="auto">${esc(course.name)}</a>
+                  <span class="muted small">${esc(exam.label || 'מבחן')} · ${u.fmtDateFull(exam.date)}</span></span></li>`;
               }).join('')}</ul>
             </section>` : ''}
             ${CT.views.schedule ? CT.views.schedule.nowNextHTML() : ''}
-            <section class="card mini-stats">
-              <div><b>${weekDone}</b><span>הושלמו השבוע</span></div>
-              <div><b>${streak.days}</b><span>${streak.days === 1 ? 'יום רצף' : 'ימי רצף'} ${streak.days >= 3 ? '🌱' : ''}</span></div>
-              <div><b>${u.fmtMinutes(u.sum(st.studyLog.filter((e) => e.date >= u.weekStart()), (e) => e.minutes))}</b><span>זמן לימוד השבוע</span></div>
-            </section>
           </div>
         </div>
 
@@ -74,6 +71,66 @@
     return out.join('');
   }
 
+  const greeting = () => {
+    const h = new Date().getHours();
+    return h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : h < 21 ? 'ערב טוב' : 'לילה טוב';
+  };
+
+  /** Top banner: greeting, date, semester week progress and four summary tiles. */
+  function heroHTML(courses, urgent, weekDone, streak) {
+    const st = S.state;
+    const dateStr = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+    const overdue = urgent.filter((x) => x.item.due < u.today()).length;
+    const soon = urgent.length - overdue;
+    const sub = !courses.length ? 'בוא נתחיל — הוסף את הקורס הראשון.'
+      : overdue ? `יש ${overdue === 1 ? 'מטלה אחת' : `${overdue} מטלות`} באיחור${soon ? ` ועוד ${soon} השבוע` : ''}. אפשר לסגור את זה היום 💪`
+        : soon ? `${soon === 1 ? 'מטלה אחת' : `${soon} מטלות`} עם דדליין בשבוע הקרוב. הכול בשליטה.`
+          : 'אין דדליינים השבוע — זמן טוב להשלים הרצאות ותרגולים.';
+
+    const all = courses.flatMap((c) => c.categories.flatMap((cat) => cat.items));
+    const tot = stats.progress(all);
+    const weekMin = u.sum(st.studyLog.filter((e) => e.date >= u.weekStart()), (e) => e.minutes);
+
+    const sem = S.semester(st.settings.activeSemesterId);
+    let semHTML = '';
+    if (sem && sem.start && sem.end) {
+      const total = u.daysBetween(sem.start, sem.end);
+      const passed = u.daysBetween(sem.start, u.today());
+      const weeks = Math.ceil((total + 1) / 7);
+      const week = u.clamp(Math.floor(passed / 7) + 1, 1, weeks);
+      const pct = u.clamp(Math.round((passed / total) * 100), 0, 100);
+      const left = u.daysUntil(sem.end);
+      const toExams = sem.examStart ? u.daysUntil(sem.examStart) : null;
+      const line = passed < 0 ? `הסמסטר מתחיל בעוד ${-passed} ימים`
+        : left < 0 ? (toExams != null && toExams >= 0 ? `הלימודים הסתיימו · תקופת המבחנים בעוד ${toExams} ימים` : 'הלימודים הסתיימו — בהצלחה במבחנים! 🍀')
+          : `עוד ${left} ימי לימודים${toExams != null ? ` · מבחנים בעוד ${toExams} ימים` : ''}`;
+      semHTML = `
+        <div class="hero-sem">
+          <div class="hero-sem-top"><span>${esc(sem.name)}</span><b>${passed < 0 ? 'טרם התחיל' : `שבוע ${week} מתוך ${weeks}`}</b></div>
+          ${ui.bar(pct, 'התקדמות הסמסטר')}
+          <span class="hero-sem-line">${line}</span>
+        </div>`;
+    }
+
+    return `
+      <section class="hero">
+        <div class="hero-main">
+          <div class="hero-text">
+            <p class="hero-date">${dateStr}</p>
+            <h1>${greeting()} 👋</h1>
+            <p class="hero-sub">${sub}</p>
+          </div>
+          ${semHTML}
+        </div>
+        <div class="hero-tiles">
+          <div class="tile"><span class="tile-ic" aria-hidden="true">🎯</span><b>${tot.pct}%</b><span>התקדמות כוללת</span></div>
+          <div class="tile"><span class="tile-ic" aria-hidden="true">✅</span><b>${weekDone}</b><span>הושלמו השבוע</span></div>
+          <div class="tile"><span class="tile-ic" aria-hidden="true">${streak.days >= 3 ? '🔥' : '🌱'}</span><b>${streak.days}</b><span>${streak.days === 1 ? 'יום רצף' : 'ימי רצף'}</span></div>
+          <div class="tile"><span class="tile-ic" aria-hidden="true">⏱️</span><b>${weekMin ? u.fmtMinutes(weekMin) : '0'}</b><span>לימוד השבוע</span></div>
+        </div>
+      </section>`;
+  }
+
   function urgentRow({ item, course }) {
     const n = u.daysUntil(item.due);
     return `<li class="${n < 0 ? 'overdue' : n <= 1 ? 'soon' : ''}" style="--c:${esc(course.color)}">
@@ -91,16 +148,20 @@
     const n = exam && u.daysUntil(exam.date);
     return `
       <a class="card course-card" href="#/course/${c.id}" style="--c:${esc(c.color)}">
-        <div class="cc-head">
-          <h3 dir="auto">${esc(c.name)}</h3>
-          ${c.number ? `<span class="muted small" dir="ltr">${esc(c.number)}</span>` : ''}
+        <div class="cc-top">
+          <div class="cc-title">
+            <h3 dir="auto">${esc(c.name)}</h3>
+            <span class="muted small">${[c.number && `<span dir="ltr">${esc(c.number)}</span>`, c.credits && `${esc(c.credits)} נק״ז`].filter(Boolean).join(' · ') || '&nbsp;'}</span>
+          </div>
+          ${ui.ring(p.pct)}
         </div>
-        <div class="cc-progress"><span class="cc-pct">${p.pct}%</span>${ui.bar(p.pct, `התקדמות ב${c.name}`)}</div>
         <div class="cc-meta">
-          <span>${p.open ? `${p.open} פתוחים` : '✓ הכול הושלם'}</span>
-          ${exam ? `<span class="${n <= 14 ? 'warn' : ''}">⏳ ${n === 0 ? 'מבחן היום' : `${n} ימים ל${esc(exam.label || 'מבחן')}`}</span>` : ''}
+          <span class="cc-chip">${p.open ? `${p.done}/${p.total} הושלמו` : '✓ הכול הושלם'}</span>
+          ${exam ? `<span class="cc-chip${n <= 14 ? ' warn' : ''}">⏳ ${n === 0 ? 'מבחן היום' : `${n} ימים ל${esc(exam.label || 'מבחן')}`}</span>` : ''}
         </div>
-        ${next ? `<div class="cc-next ${next.item.due < u.today() ? 'overdue' : ''}">הבא: <span dir="auto">${esc(next.item.title)}</span> · ${u.relDays(next.item.due)}</div>` : ''}
+        <div class="cc-next ${next && next.item.due < u.today() ? 'overdue' : ''}">${next
+          ? `<span class="muted">הבא:</span> <span dir="auto">${esc(next.item.title)}</span> · ${u.relDays(next.item.due)}`
+          : '<span class="muted">אין דדליינים קרובים</span>'}</div>
       </a>`;
   }
 

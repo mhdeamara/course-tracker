@@ -186,6 +186,15 @@
     <div class="progress${small ? ' progress-sm' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${u.esc(label || 'התקדמות')}">
       <div class="progress-fill" style="width:${pct}%"></div>
     </div>`;
+  /** Donut progress ring (SVG) with the percentage in the middle. */
+  ui.ring = (pct, size = 58, stroke = 6) => {
+    const r = (size - stroke) / 2, c = 2 * Math.PI * r, h = size / 2;
+    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${pct}% הושלמו">
+      <circle class="ring-bg" cx="${h}" cy="${h}" r="${r}" stroke-width="${stroke}"/>
+      <circle class="ring-fg" cx="${h}" cy="${h}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(2)}" transform="rotate(-90 ${h} ${h})"/>
+      <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${pct}<tspan class="ring-unit">%</tspan></text>
+    </svg>`;
+  };
   ui.statusPill = (status) => `<span class="pill st-${status}">${u.esc(CT.model.STATUSES[status].label)}</span>`;
   ui.courseDot = (c) => `<span class="dot" style="background:${u.esc(c.color)}"></span>`;
   ui.empty = (msg) => `<div class="empty">${msg}</div>`;

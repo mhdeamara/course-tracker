@@ -32,6 +32,7 @@
     if (!c) { root.innerHTML = ui.empty('הקורס לא נמצא. <a href="#/">חזרה לדשבורד</a>'); return; }
     if (view.courseId !== c.id) Object.assign(view, { courseId: c.id, tab: 'items', filter: 'all', tag: '', focusId: null });
     if (params.tab) view.tab = params.tab;
+    if (params.item) Object.assign(view, { tab: 'items', filter: 'all', tag: '' }); // jumping to an item (search / dashboard)
     const tabs = [['items', 'פריטים']];
     if (CT.views.grades) tabs.push(['grades', 'ציונים']);
     if (CT.views.notebook) tabs.push(['notebook', 'מחברת מושגים']);
@@ -54,6 +55,7 @@
       <article class="course-page" style="--c:${esc(c.color)}">
         <header class="card course-head">
           <div class="course-head-top">
+            <div class="course-ring">${ui.ring(p.pct, 76, 7)}</div>
             <div class="course-title">
               <h1 dir="auto">${esc(c.name)}${c.sample ? ' <span class="pill pill-muted">דוגמה</span>' : ''}${c.archived ? ' <span class="pill pill-muted">בארכיון</span>' : ''}</h1>
               ${meta ? `<div class="meta">${meta}</div>` : ''}
@@ -67,8 +69,10 @@
           ${links ? `<div class="links no-print">${links}</div>` : ''}
           ${exams ? `<div class="exams">${exams}</div>` : ''}
           <div class="course-progress">
-            <span class="big-pct">${p.pct}%</span>${ui.bar(p.pct, 'התקדמות כללית בקורס')}
-            <span class="muted nowrap">${p.done} מתוך ${p.total}</span>
+            ${c.categories.map((cat) => {
+              const cp = stats.progress(cat.items);
+              return `<div class="cp-item" title="${esc(cat.name)}: ${cp.done}/${cp.total}"><span class="cp-name" dir="auto">${esc(cat.name)}</span>${ui.bar(cp.pct, cat.name, true)}<span class="cp-num">${cp.done}/${cp.total}</span></div>`;
+            }).join('')}
           </div>
         </header>
         ${tabs.length > 1 ? `<nav class="tabs no-print" role="tablist" aria-label="חלקי הקורס">
