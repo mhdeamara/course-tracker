@@ -91,22 +91,12 @@
     meta: { createdAt: new Date().toISOString(), updatedAt: null },
   });
 
-  /* ---------- first-run data: the semester ו courses with a standard structure ---------- */
+  /* ---------- first-run data: one empty semester; courses are added from the catalog page ---------- */
   m.initialData = () => {
     const st = m.emptyState();
-    const sem = m.newSemester({ name: 'סמסטר ו — חורף תשפ״ז', ...m.WINTER_5787 });
+    const sem = m.newSemester({ name: 'חורף תשפ״ז', ...m.WINTER_5787 });
     st.semesters.push(sem);
     st.settings.activeSemesterId = sem.id;
-
-    // Real courses (empty, standard structure — edit to match reality)
-    const real = ['אימות פורמלי', 'הספק', 'מבוא למבני נתונים ואלגוריתמים', 'מעבדה 1ב', 'מעגלים אלקטרונים', 'פיזיקה קוונטית', 'שיטות הערכה'];
-    real.forEach((name, i) => {
-      const c = m.newCourse({ name, semesterId: sem.id, color: m.COLORS[i % m.COLORS.length] });
-      if (name.startsWith('מעבדה')) c.categories = m.labCategories(6);
-      else m.applyTemplate(c, m.DEFAULT_TEMPLATE);
-      st.courses.push(c);
-    });
-
     return st;
   };
 

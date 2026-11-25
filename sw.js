@@ -1,6 +1,6 @@
 /* sw.js — offline support: serve the app's own files from a local cache, refresh them in the background.
  * Requests to other sites (the Supabase cloud) are never cached. */
-const CACHE = 'course-tracker-v1';
+const CACHE = 'course-tracker-v2';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])));

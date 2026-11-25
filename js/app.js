@@ -11,6 +11,7 @@
     ['', 'דשבורד', 'home'],
     ['schedule', 'מערכת שעות', 'calendar'],
     ['review', 'חזרה למבחן', 'star'],
+    ['catalog', 'תכנית לימודים', 'book'],
     ['stats', 'סטטיסטיקות', 'chart'],
     ['archive', 'ארכיון', 'archive'],
     ['settings', 'הגדרות', 'gear'],
@@ -53,6 +54,7 @@
       review: () => views.review.render(main, params),
       stats: () => views.stats.render(main, params),
       archive: () => views.archive.render(main, params),
+      catalog: () => views.catalog.render(main, params),
       settings: () => views.settings.render(main, params),
     };
     const routeKey = route === 'course' ? 'course' : route;

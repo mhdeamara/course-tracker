@@ -47,7 +47,7 @@
           </div>
         </div>
         <div class="course-grid">
-          ${courses.map(cardHTML).join('') || ui.empty('אין קורסים פעילים. <button class="btn btn-primary" data-action="new-course">הוסף קורס</button>')}
+          ${courses.map(cardHTML).join('') || ui.empty('אין קורסים פעילים. <a class="btn btn-primary" href="#/catalog">בחר מתכנית הלימודים</a> <button class="btn" data-action="new-course">קורס ידני</button>')}
         </div>
       </div>`;
 
