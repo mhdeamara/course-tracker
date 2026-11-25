@@ -1,0 +1,148 @@
+/* views/settings.js — backup & restore, semesters, default template, theme, data reset. */
+(function (CT) {
+  'use strict';
+  const { u, ui } = CT;
+  const S = CT.store, M = CT.model;
+  const esc = u.esc, icon = u.icon;
+  const V = {};
+  CT.views = CT.views || {};
+  CT.views.settings = V;
+
+  V.render = (root) => {
+    const st = S.state;
+    const b = CT.backup;
+    const last = st.settings.lastBackup;
+    const autoState = !b.supported
+      ? '<p class="muted">הדפדפן הזה לא תומך בשמירה אוטומטית לקובץ (נתמך ב-Chrome וב-Edge במחשב). השתמש בייצוא ידני.</p>'
+      : b.status === 'granted'
+        ? `<p>✅ פעיל — כל שינוי נשמר תוך 2 שניות לקובץ <b dir="ltr">${esc(b.handle && b.handle.name)}</b>.</p>
+           <button class="btn" data-action="disconnect">הפסק שמירה אוטומטית</button>`
+        : b.status === 'needs-permission'
+          ? `<p>⏸️ מחובר לקובץ <b dir="ltr">${esc(b.handle && b.handle.name)}</b>, אבל הדפדפן מבקש אישור מחדש אחרי כל פתיחה.</p>
+             <button class="btn btn-primary" data-action="regrant">אשר גישה</button> <button class="btn" data-action="disconnect">נתק</button>`
+          : `<p class="muted">בחר קובץ (מומלץ בתוך תיקיית OneDrive) והמערכת תשמור אליו עותק אוטומטית בכל שינוי.</p>
+             <button class="btn btn-primary" data-action="connect">${icon.download} בחר קובץ לשמירה אוטומטית</button>`;
+    const counts = st.courses.reduce((a, c) => { a[c.semesterId] = (a[c.semesterId] || 0) + 1; return a; }, {});
+
+    root.innerHTML = `
+      <div class="settings">
+        <h1>הגדרות</h1>
+
+        <section class="card">
+          <h2>💾 גיבוי ושחזור</h2>
+          <p>הנתונים נשמרים בדפדפן הזה בלבד. גיבוי אחרון: <b>${last ? `${u.fmtDateFull(u.isoDate(new Date(last)))} (${u.relDays(u.isoDate(new Date(last))).replace('אתמול (באיחור)', 'אתמול').replace(/באיחור (\d+) ימים/, 'לפני $1 ימים')})` : 'אף פעם'}</b></p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="export">${icon.download} ייצוא גיבוי (JSON)</button>
+            <button class="btn" data-action="import">${icon.upload} ייבוא גיבוי</button>
+          </div>
+          <h3>שמירה אוטומטית לקובץ</h3>
+          ${autoState}
+        </section>
+
+        <section class="card">
+          <h2>📅 סמסטרים</h2>
+          <p class="muted">תאריכי ההתחלה והסיום משמשים לחישוב "קצב צפוי" בסטטיסטיקות. הסמסטר המסומן הוא ברירת המחדל לקורסים חדשים.</p>
+          <div class="sem-list">
+            ${st.semesters.map((s) => `
+              <div class="sem-row" data-id="${s.id}">
+                <label class="radio" title="סמסטר ברירת מחדל"><input type="radio" name="active" ${s.id === st.settings.activeSemesterId ? 'checked' : ''} aria-label="סמסטר נוכחי"></label>
+                <input name="name" dir="auto" value="${esc(s.name)}" aria-label="שם הסמסטר">
+                <label class="field-inline">התחלה <input type="date" name="start" value="${esc(s.start)}"></label>
+                <label class="field-inline">סיום <input type="date" name="end" value="${esc(s.end)}"></label>
+                <span class="muted small">${counts[s.id] || 0} קורסים</span>
+                <button class="icon-btn" data-action="del-sem" aria-label="מחק סמסטר" ${counts[s.id] ? 'disabled title="יש קורסים בסמסטר"' : ''}>${icon.trash}</button>
+              </div>`).join('')}
+          </div>
+          <button class="btn btn-ghost" data-action="add-sem">${icon.plus} סמסטר</button>
+        </section>
+
+        <section class="card">
+          <h2>🧩 תבנית ברירת מחדל לקורס חדש</h2>
+          <div class="tpl-head muted"><span>קטגוריה</span><span>כמות</span><span>תבנית שם</span><span></span></div>
+          <div class="tpl-rows">${st.settings.template.map((t, i) => `
+            <div class="tpl-row" data-i="${i}">
+              <input name="name" dir="auto" value="${esc(t.name)}" aria-label="שם קטגוריה">
+              <input name="count" type="number" min="0" value="${esc(t.count)}" aria-label="כמות">
+              <input name="pattern" dir="auto" value="${esc(t.pattern)}" aria-label="תבנית שם">
+              <button class="icon-btn" data-action="del-tpl" aria-label="הסר">${icon.trash}</button>
+            </div>`).join('')}</div>
+          <button class="btn btn-ghost" data-action="add-tpl">${icon.plus} שורה</button>
+          <button class="btn btn-ghost" data-action="reset-tpl">אפס לברירת המחדל</button>
+        </section>
+
+        <section class="card">
+          <h2>🎨 תצוגה ופומודורו</h2>
+          <div class="form-grid">
+            <label class="field"><span>ערכת צבעים</span>
+              <select data-action="theme">
+                ${[['auto', 'לפי המערכת'], ['light', 'בהיר'], ['dark', 'כהה']].map(([k, l]) => `<option value="${k}" ${CT.app.theme() === k ? 'selected' : ''}>${l}</option>`).join('')}
+              </select></label>
+            <label class="field"><span>פומודורו — דקות עבודה</span><input type="number" min="5" max="120" name="work" value="${st.settings.pomodoro.work}"></label>
+            <label class="field"><span>פומודורו — דקות הפסקה</span><input type="number" min="1" max="60" name="brk" value="${st.settings.pomodoro.brk}"></label>
+          </div>
+          <button class="btn" data-action="help">${icon.keyboard} קיצורי מקלדת</button>
+        </section>
+
+        <section class="card">
+          <h2>🧹 נתונים</h2>
+          <div class="btn-row">
+            ${st.courses.some((c) => c.sample) ? `<button class="btn" data-action="clear-sample">נקה נתוני דוגמה</button>` : ''}
+            <button class="btn btn-danger" data-action="reset">מחק הכול והתחל מחדש</button>
+          </div>
+        </section>
+      </div>`;
+
+    const el = root.querySelector('.settings');
+    el.addEventListener('click', onClick);
+    el.addEventListener('change', onChange);
+  };
+
+  async function onClick(e) {
+    const a = e.target.closest('[data-action]');
+    if (!a) return;
+    const semId = a.closest('.sem-row') && a.closest('.sem-row').dataset.id;
+    switch (a.dataset.action) {
+      case 'export': CT.backup.exportFile(); break;
+      case 'import': CT.backup.pickImport(); break;
+      case 'connect': CT.backup.connect(); break;
+      case 'regrant': CT.backup.regrant(); break;
+      case 'disconnect': CT.backup.disconnect(); break;
+      case 'add-sem': S.commit('הוספת סמסטר', (st) => st.semesters.push(M.newSemester())); break;
+      case 'del-sem': S.commit('מחיקת סמסטר', (st) => { st.semesters = st.semesters.filter((s) => s.id !== semId); }); break;
+      case 'add-tpl': S.commit('עריכת תבנית', (st) => st.settings.template.push({ name: '', count: 13, pattern: '{n}' })); break;
+      case 'del-tpl': S.commit('עריכת תבנית', (st) => st.settings.template.splice(Number(a.closest('.tpl-row').dataset.i), 1)); break;
+      case 'reset-tpl': S.commit('איפוס תבנית', (st) => { st.settings.template = JSON.parse(JSON.stringify(M.DEFAULT_TEMPLATE)); }); break;
+      case 'help': CT.app.showHelp(); break;
+      case 'clear-sample': CT.views.dashboard.clearSample(); break;
+      case 'reset':
+        if (!(await ui.confirm('למחוק את כל הנתונים ולהתחיל מאפס?\nמומלץ לייצא גיבוי קודם. אפשר לבטל מיד עם Ctrl+Z.', 'מחק הכול', true))) return;
+        S.replace(M.emptyState(), 'מחיקת כל הנתונים');
+        S.commit('', (st) => { const sem = M.newSemester({ name: 'סמסטר נוכחי' }); st.semesters.push(sem); st.settings.activeSemesterId = sem.id; }, { undo: false });
+        break;
+      default: break;
+    }
+  }
+
+  function onChange(e) {
+    const t = e.target;
+    const sem = t.closest('.sem-row');
+    if (sem) {
+      const id = sem.dataset.id;
+      if (t.type === 'radio') S.commit('סמסטר נוכחי', (st) => { st.settings.activeSemesterId = id; });
+      else S.commit('עריכת סמסטר', (st) => { st.semesters.find((s) => s.id === id)[t.name] = t.value.trim(); });
+      return;
+    }
+    const tpl = t.closest('.tpl-row');
+    if (tpl) {
+      S.commit('עריכת תבנית', (st) => {
+        const row = st.settings.template[Number(tpl.dataset.i)];
+        row[t.name] = t.name === 'count' ? (parseInt(t.value, 10) || 0) : t.value;
+      });
+      return;
+    }
+    if (t.matches('[data-action=theme]')) CT.app.setTheme(t.value);
+    if (t.name === 'work' || t.name === 'brk') {
+      S.commit('הגדרות פומודורו', (st) => { st.settings.pomodoro[t.name] = Math.max(1, parseInt(t.value, 10) || 1); });
+    }
+  }
+})(window.CT);

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>הקורסים שלי</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <!-- apply theme before first paint (avoids a white flash in dark mode) -->
+  <script>
+    (function () {
+      var t = 'auto';
+      try { t = localStorage.getItem('ct.theme') || 'auto'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">דלג לתוכן</a>
+  <header id="app-header" class="app-header"></header>
+  <main id="main" class="main" tabindex="-1"></main>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <noscript>המערכת צריכה JavaScript כדי לעבוד.</noscript>
+
+  <!-- Local libraries (no network) -->
+  <script src="vendor/katex/katex.min.js"></script>
+  <!-- Data & logic (no DOM) -->
+  <script src="js/utils.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/backup.js"></script>
+  <script src="js/stats.js"></script>
+  <!-- UI -->
+  <script src="js/ui.js"></script>
+  <script src="js/views/dashboard.js"></script>
+  <script src="js/views/course.js"></script>
+  <script src="js/views/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
