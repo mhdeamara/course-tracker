@@ -31,6 +31,7 @@
       if (CT.ui) CT.ui.toast('השמירה בדפדפן נכשלה — כדאי לייצא גיבוי עכשיו', { error: true });
     }
     if (!noAuto && CT.backup) CT.backup.scheduleAutoSave();
+    if (!noAuto && CT.cloud) CT.cloud.onLocalChange();
   };
 
   /**

@@ -27,6 +27,7 @@
     root.innerHTML = `
       <div class="settings">
         <h1>הגדרות</h1>
+        ${syncSection()}
 
         <section class="card">
           <h2>💾 גיבוי ושחזור</h2>
@@ -95,13 +96,84 @@
     const el = root.querySelector('.settings');
     el.addEventListener('click', onClick);
     el.addEventListener('change', onChange);
+    const form = el.querySelector('.login-form');
+    if (form) form.addEventListener('submit', (e) => { e.preventDefault(); login('in', form); });
   };
+
+  /* ---------- cloud sync panel ---------- */
+  function syncSection() {
+    const C = CT.cloud;
+    if (!C || !C.enabled) {
+      return `<section class="card"><h2>☁️ סנכרון בין מכשירים</h2>
+        <p class="muted">הסנכרון עוד לא הוגדר — המערכת עובדת מקומית בלבד. להפעלה ממלאים את פרטי Supabase בקובץ <code dir="ltr">js/config.js</code> (ההוראות ב-README).</p></section>`;
+    }
+    const [cls, text] = C.label();
+    if (!C.signedIn()) {
+      return `<section class="card sync-card">
+        <h2>☁️ סנכרון בין מכשירים</h2>
+        <p>התחבר כדי שהנתונים יסונכרנו בין המחשב לטלפון.${C.error ? ` <span class="warn-line">${esc(C.error)}</span>` : ''}</p>
+        <form class="login-form" autocomplete="on">
+          <label class="field"><span>אימייל</span><input type="email" name="email" dir="ltr" autocomplete="email" required></label>
+          <label class="field"><span>סיסמה</span><input type="password" name="password" dir="ltr" autocomplete="current-password" minlength="6" required></label>
+          <div class="btn-row">
+            <button class="btn btn-primary" type="submit">התחבר</button>
+            <button class="btn" type="button" data-action="signup">הרשמה (פעם ראשונה)</button>
+          </div>
+          <p class="login-msg muted small" aria-live="polite"></p>
+        </form>
+      </section>`;
+    }
+    return `<section class="card sync-card">
+      <h2>☁️ סנכרון בין מכשירים</h2>
+      <p class="sync-state"><span class="sync-dot ${cls || 'warn'}"></span><b>${esc(text)}</b>
+        ${C.lastSync ? `<span class="muted small">· לאחרונה ${C.lastSync.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}</p>
+      ${C.error ? `<p class="warn-line">${esc(C.error)}</p>` : ''}
+      <p class="muted">מחובר כ-<b dir="ltr">${esc(C.email())}</b>. כל שינוי נשמר בענן תוך שניות, ושינויים ממכשיר אחר מופיעים כאן תוך כחצי דקה.</p>
+      <div class="btn-row">
+        <button class="btn" data-action="sync-now">סנכרן עכשיו</button>
+        <button class="btn btn-ghost" data-action="sign-out">התנתק</button>
+      </div>
+    </section>`;
+  }
+
+  async function login(mode, form) {
+    const email = form.querySelector('[name=email]').value.trim();
+    const pass = form.querySelector('[name=password]').value;
+    const msg = form.querySelector('.login-msg');
+    if (!email || pass.length < 6) { msg.textContent = 'צריך אימייל וסיסמה של 6 תווים לפחות'; return; }
+    msg.textContent = mode === 'up' ? 'נרשם…' : 'מתחבר…';
+    form.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      if (mode === 'up') {
+        const r = await CT.cloud.signUp(email, pass);
+        if (r === 'confirm-email') {
+          msg.textContent = '✉️ נשלח מייל אישור. לחץ על הקישור במייל, ואז חזור לכאן ולחץ "התחבר".';
+          form.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+          return;
+        }
+      } else {
+        await CT.cloud.signIn(email, pass);
+      }
+      ui.toast('מחובר — הסנכרון פעיל');
+      CT.app.rerender();
+    } catch (e) {
+      msg.textContent = CT.cloud.heMsg(e);
+      form.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    }
+  }
 
   async function onClick(e) {
     const a = e.target.closest('[data-action]');
     if (!a) return;
     const semId = a.closest('.sem-row') && a.closest('.sem-row').dataset.id;
     switch (a.dataset.action) {
+      case 'signup': login('up', a.closest('form')); break;
+      case 'sync-now': CT.cloud.syncNow(); break;
+      case 'sign-out':
+        if (!(await ui.confirm('להתנתק מהסנכרון במכשיר הזה? הנתונים נשארים גם כאן וגם בענן.', 'התנתק'))) return;
+        await CT.cloud.signOut();
+        CT.app.rerender();
+        break;
       case 'export': CT.backup.exportFile(); break;
       case 'import': CT.backup.pickImport(); break;
       case 'connect': CT.backup.connect(); break;

@@ -73,6 +73,7 @@
   b.needsReminder = () => {
     const st = CT.store.state.settings;
     if (b.status === 'granted') return false;
+    if (CT.cloud && CT.cloud.signedIn()) return false; // the cloud copy is the backup
     if (st.backupSnooze && Date.now() < Date.parse(st.backupSnooze)) return false;
     const last = st.lastBackup || CT.store.state.meta.createdAt;
     return Date.now() - Date.parse(last) > 7 * 86400000;

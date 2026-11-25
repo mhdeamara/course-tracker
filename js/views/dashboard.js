@@ -59,6 +59,14 @@
   function bannersHTML() {
     const b = CT.backup;
     const out = [];
+    const C = CT.cloud;
+    if (C && C.enabled && !C.signedIn()) {
+      out.push(`<div class="banner banner-info" role="status">☁️ התחבר כדי לסנכרן בין המחשב לטלפון.
+        <a class="btn btn-small btn-primary" href="#/settings">להתחברות</a></div>`);
+    } else if (C && C.status === 'conflict') {
+      out.push(`<div class="banner banner-warn" role="status">⚠️ הנתונים השתנו בשני מכשירים ועדיין לא נבחרה גרסה.
+        <button class="btn btn-small btn-primary" data-action="sync-now">פתור עכשיו</button></div>`);
+    }
     if (b.status === 'needs-permission') {
       out.push(`<div class="banner banner-info" role="status">💾 השמירה האוטומטית לקובץ ממתינה לאישור הדפדפן.
         <button class="btn btn-small btn-primary" data-action="regrant">אשר גישה לקובץ</button></div>`);
@@ -175,6 +183,7 @@
       case 'export': CT.backup.exportFile(); break;
       case 'snooze': CT.backup.snooze(); break;
       case 'regrant': CT.backup.regrant(); break;
+      case 'sync-now': CT.cloud.syncNow(); break;
       default: break;
     }
   }

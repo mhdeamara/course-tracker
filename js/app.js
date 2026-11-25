@@ -65,6 +65,7 @@
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     renderSidebar(route, id);
+    paintSyncDot();
     if (app.lastRoute === location.hash && !params.item) window.scrollTo(0, scrollY);
     app.lastRoute = location.hash;
     if (CT.timer) CT.timer.renderChip();
@@ -80,6 +81,31 @@
   });
 
   /* ---------- header ---------- */
+  /* ---------- cloud sync status (sidebar footer + small header dot) ---------- */
+  const syncLine = () => {
+    const [cls, text] = CT.cloud.label();
+    const email = CT.cloud.email();
+    return `<span class="sb-dot ${cls === 'ok' ? 'ok' : cls === 'bad' ? 'bad' : cls === 'busy' ? 'busy' : 'warn'}"></span>
+      <span class="sb-sync"><b>☁️ ${esc(text)}</b>${email ? `<span dir="ltr">${esc(email)}</span>` : ''}</span>`;
+  };
+  const paintSyncDot = () => {
+    const dot = document.getElementById('sync-dot');
+    if (!dot || !CT.cloud) return;
+    const [cls, text] = CT.cloud.label();
+    dot.className = `sync-dot ${cls || 'warn'}`;
+    dot.title = `סנכרון: ${text}`;
+    dot.setAttribute('aria-label', dot.title);
+  };
+  /** Called by cloud.js whenever the sync status changes. */
+  app.updateSyncBadge = () => {
+    if (!CT.cloud || !CT.cloud.enabled) return;
+    const foot = document.getElementById('sb-foot');
+    if (foot) foot.innerHTML = syncLine();
+    paintSyncDot();
+    // keep the settings page's sync panel current (but never while the user is typing there)
+    if (parseHash().route === 'settings' && !document.querySelector('.settings :focus')) app.rerender();
+  };
+
   /** Desktop sidebar: navigation, quick course list with progress, backup status. */
   function renderSidebar(route, id) {
     const sb = document.getElementById('sidebar');
@@ -107,7 +133,7 @@
           }).join('')}
         </div>
       </div>
-      <a href="#/settings" class="sb-foot">${backupLine}</a>`;
+      <a href="#/settings" class="sb-foot" id="sb-foot">${CT.cloud && CT.cloud.enabled ? syncLine() : backupLine}</a>`;
     sb.querySelector('[data-sb=new]').onclick = () => CT.views.course.courseForm();
   }
 
@@ -123,6 +149,7 @@
           <div class="search-results" id="search-results" role="listbox" hidden></div>
         </div>
         <div class="header-actions">
+          ${CT.cloud && CT.cloud.enabled ? '<a href="#/settings" id="sync-dot" class="sync-dot warn" aria-label="סנכרון"></a>' : ''}
           <span id="timer-slot"></span>
           <button class="icon-btn" id="undo-btn" aria-label="ביטול פעולה אחרונה (Ctrl+Z)" title="ביטול (Ctrl+Z)">${icon.undo}</button>
           <button class="icon-btn" id="help-btn" aria-label="קיצורי מקלדת (?)" title="קיצורי מקלדת (?)">${icon.keyboard}</button>
@@ -260,6 +287,11 @@
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     if (CT.timer) CT.timer.init();
     app.rerender();
+    if (CT.cloud) CT.cloud.init(); // runs in the background; replaces data if the cloud is newer
+    // installable app + offline cache (only works over https / localhost, not file://)
+    if ('serviceWorker' in navigator && /^https:|^http:\/\/(localhost|127\.0\.0\.1)/.test(location.href)) {
+      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));
+    }
     if (result === 'new') {
       ui.toast('ברוך הבא! נטענו הקורסים של סמסטר ו. לחץ ? לקיצורי מקלדת.', { ms: 9000 });
     }

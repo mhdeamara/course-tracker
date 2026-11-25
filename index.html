@@ -5,7 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>הקורסים שלי</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <link rel="icon" type="image/png" href="icons/favicon-64.png">
+  <!-- installable app on phone / desktop -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#1f3a5f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="הקורסים שלי">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- apply theme before first paint (avoids a white flash in dark mode) -->
   <script>
     (function () {
@@ -33,6 +41,7 @@
   <!-- Local libraries (no network) -->
   <script src="vendor/katex/katex.min.js"></script>
   <!-- Data & logic (no DOM) -->
+  <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/model.js"></script>
   <script src="js/store.js"></script>
@@ -41,6 +50,7 @@
   <script src="js/grades.js"></script>
   <!-- UI -->
   <script src="js/ui.js"></script>
+  <script src="js/cloud.js"></script>
   <script src="js/timer.js"></script>
   <script src="js/views/dashboard.js"></script>
   <script src="js/views/course.js"></script>
