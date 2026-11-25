@@ -40,6 +40,8 @@
           ${autoState}
         </section>
 
+        ${catalogSection()}
+
         <section class="card">
           <h2>📅 סמסטרים</h2>
           <p class="muted">תאריכי ההתחלה והסיום משמשים לחישוב "קצב צפוי" בסטטיסטיקות. הסמסטר המסומן הוא ברירת המחדל לקורסים חדשים.</p>
@@ -194,8 +196,21 @@
     }
   }
 
+  function catalogSection() {
+    const C = CT.views.catalog;
+    C.load();
+    return `<section class="card">
+      <h2>📘 תכנית לימודים</h2>
+      <p class="small">שנת הקטלוג שלך היא בדרך כלל השנה שבה התחלת את התואר. הקטלוגים לא נדרסים — כל שנה נשמרת בנפרד.</p>
+      <div class="btn-row"><label class="small">פקולטה: <b>${esc(CT.catalog.FACULTIES.ee)}</b>, מסלול הנדסת חשמל</label>
+        <label class="small">שנת קטלוג: ${C.yearPicker()}</label></div>
+      ${C.sourceHTML()}
+    </section>`;
+  }
+
   function onChange(e) {
     const t = e.target;
+    if (t.matches('[data-action=cat-year]')) { CT.views.catalog.setYear(t.value); return; }
     const sem = t.closest('.sem-row');
     if (sem) {
       const id = sem.dataset.id;

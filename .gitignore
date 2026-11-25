@@ -6,3 +6,5 @@ desktop.ini
 # personal data exports (keep backups out of git by default)
 course-tracker-backup-*.json
 course-tracker-data.json
+# official catalog PDFs are downloaded for reference only — never committed
+*.pdf

@@ -44,10 +44,13 @@
     const mand = nums.filter((n) => K.mandatorySet.has(n)).reduce((s, n) => s + credits(n), 0);
     const labPts = nums.filter((n) => K.labs.includes(n)).reduce((s, n) => s + credits(n), 0);
     const elect = new Set(K.electives());
-    const fac = nums.filter((n) => elect.has(n)).reduce((s, n) => s + credits(n), 0) + Math.max(0, labPts - 3);
-    const groupsDone = K.groups.filter((g) => groupState(g, my).done).length;
-    return { mand: mand + Math.min(3, labPts), fac, groupsDone };
+    const labNeed = mandLabs();
+    const fac = nums.filter((n) => elect.has(n)).reduce((s, n) => s + credits(n), 0) + Math.max(0, Math.min(labPts, K.labMax || labPts) - labNeed);
+    // a double group counts as two
+    const groupsDone = K.groups.reduce((a, g) => { const st = groupState(g, my); return a + (st.doubleDone ? 2 : st.done ? 1 : 0); }, 0);
+    return { mand: mand + Math.min(labNeed, labPts), fac, groupsDone, labNeed };
   }
+  const mandLabs = () => K.mandatory.reduce((a, s) => a + (s.labs || 0), 0);
   function groupState(g, my) {
     const taken = g.nums.filter((n) => my.has(n));
     const mustOk = (g.must || []).every((opts) => opts.some((n) => my.has(n)));
@@ -66,9 +69,9 @@
     const must = opts.group && (opts.group.must || []).some((o) => o.includes(num));
     return `<li class="cat-row${have ? ' have' : ''}" data-num="${num}">
       <span class="cat-num" dir="ltr">${num}</span>
-      <span class="cat-name" dir="auto">${u.highlight ? u.highlight(c.name, view.q) : esc(c.name)}${must ? ' <span class="pill pill-muted cat-must">חובה בקבוצה</span>' : ''}</span>
+      <span class="cat-name" dir="auto">${u.highlight ? u.highlight(c.name, view.q) : esc(c.name)}${must ? ' <span class="pill pill-muted cat-must">חובה בקבוצה</span>' : ''}${K.replacedBy[num] ? ` <span class="muted small" title="לפי השוואת קטלוגים — לא מאומת">(בקטלוג מאוחר יותר: ${K.replacedBy[num]}${my.has(K.replacedBy[num]) ? ' — אצלך' : ''})</span>` : ''}</span>
       ${groups.length ? `<span class="cat-groups">${groups.map((g) => `<span class="cat-g" title="${esc(g.name)}">${g.n}</span>`).join('')}</span>` : '<span></span>'}
-      <span class="cat-cr">${cr(c.credits)}<span class="muted small"> נק׳</span></span>
+      <span class="cat-cr"${K.issueOf[num] ? ` title="${esc(K.issueOf[num].text)}"` : ''}>${cr(c.credits)}${K.issueOf[num] ? '<span class="cat-q">?</span>' : ''}<span class="muted small"> נק׳</span></span>
       ${have
         ? `<a class="btn btn-small cat-in" href="#/course/${have.id}" style="--c:${esc(have.color)}">${icon.check} אצלי</a>`
         : `<button class="btn btn-small" data-action="add">${icon.plus} הוסף</button>`}
@@ -118,7 +121,7 @@
         </div>` : ''}
       </section>`;
     }).join('');
-    return `<p class="muted small">צריך להשלים לפחות 3 קבוצות התמחות בתוך הבחירה הפקולטית (קבוצה כפולה נספרת כשתיים). המספר בעיגול ליד כל מקצוע = הקבוצות שהוא שייך אליהן.</p>
+    return `<p class="muted small">צריך להשלים לפחות ${K.minGroups || 3} קבוצות התמחות בתוך הבחירה הפקולטית (קבוצה כפולה נספרת כשתיים). המספר בעיגול ליד כל מקצוע = הקבוצות שהוא שייך אליהן.</p>
       <p class="muted small">${esc(K.optNote)}</p>
       <div class="toolbar-actions" style="margin-bottom:12px"><button class="btn btn-ghost btn-small" data-action="expand-all">פתח הכול</button><button class="btn btn-ghost btn-small" data-action="collapse-all">סגור הכול</button></div>
       ${cards || ui.empty('אין תוצאות.')}`;
@@ -146,16 +149,45 @@
   }
 
   function freeTab(my) {
-    return `<section class="card"><h2 class="cat-h2">בחירה כלל־טכניונית — 12 נק׳</h2>
+    return `<section class="card"><h2 class="cat-h2">בחירה כלל־טכניונית — ${K.totals.free} נק׳</h2>
         <ul class="cat-rules">${K.freeRules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></section>
-      <section class="card"><h2 class="cat-h2">מומלצים / נפוצים</h2>${list(K.freeSuggested, my, { noGroups: true }) || ui.empty('אין תוצאות.')}
+      <section class="card"><h2 class="cat-h2">מומלצים בקטלוג</h2>${K.freeNote ? `<p class="muted small">${esc(K.freeNote)}</p>` : ''}${list(K.freeSuggested, my, { noGroups: true }) || '<p class="muted small">אין המלצה בקטלוג הזה.</p>'}
         <p class="muted small cat-note">כל מקצוע אחר בטכניון — דרך „קורס חדש” עם המספר שלו.</p>
         <button class="btn" data-action="custom">${icon.plus} קורס חדש</button></section>`;
   }
 
   /* ---------- render ---------- */
+  /** Load the catalog chosen in settings (or the nearest one). */
+  V.load = () => {
+    const cs = S.state.settings.catalog || {};
+    return K.select(cs.faculty || 'ee', cs.year || null);
+  };
+  /** Header block: source line, fallback warning, unverified data. Also used by settings. */
+  V.sourceHTML = () => {
+    const si = K.sourceInfo();
+    if (!si) return '';
+    const warn = K.fallbackWarning();
+    const issues = (K.knownIssues || []).map((k) => k.text).concat(K.verify || []);
+    return `<p class="small cat-source">קטלוג: ${esc(si.text)} · עודכן: <span dir="ltr" title="${esc(si.updatedNote)}">${esc(si.updated)}</span>${si.updated && !K.source.uploaded ? '*' : ''} · מקור: <a href="${esc(si.url)}" target="_blank" rel="noopener">${esc(si.title)}</a> · נשלף: <span dir="ltr">${esc(si.retrieved)}</span></p>
+      ${warn ? `<p class="cat-alert" role="alert">⚠ ${esc(warn)}</p>` : ''}
+      ${issues.length ? `<details class="cat-issues"><summary>⚠ ${issues.length} נתונים לא מאומתים / אי-התאמות בקטלוג הזה</summary><ul>${issues.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+        <p class="muted small">פרטים ב־catalogs/${esc(K.faculty)}/${K.year}.fixes.md. לא תוקן שום נתון בלי תיעוד — כדאי לוודא מול מזכירות הפקולטה.</p></details>` : ''}`;
+  };
+  V.yearPicker = (cls = '') => {
+    const cs = S.state.settings.catalog || {};
+    const have = new Set(K.available(cs.faculty || 'ee'));
+    return `<select data-action="cat-year" class="chip-select ${cls}" aria-label="שנת קטלוג">
+      <option value="" ${cs.year ? '' : 'selected'}>— לא נבחרה (החדש ביותר) —</option>
+      ${K.pickerYears(cs.faculty || 'ee').map((y) => `<option value="${y}" ${Number(cs.year) === y ? 'selected' : ''}>${K.yearLabel(y)}${have.has(y) ? '' : ' (אין קטלוג — יוצג הקרוב)'}</option>`).join('')}</select>`;
+  };
+  V.setYear = (val) => {
+    S.commit('שנת קטלוג', (s) => { s.settings.catalog = { faculty: 'ee', year: val ? Number(val) : null }; });
+  };
+
   V.render = (root) => {
     const st = S.state;
+    V.load();
+    if (!K.ready) { root.innerHTML = `<div class="catalog"><h1>תכנית הלימודים</h1>${ui.empty(esc(K.error || 'אין קטלוג'))}</div>`; return; }
     const my = mine();
     const sum = summary(my);
     if (!view.semId || !st.semesters.some((s) => s.id === view.semId)) view.semId = st.settings.activeSemesterId || (st.semesters[0] && st.semesters[0].id) || '';
@@ -164,12 +196,14 @@
     root.innerHTML = `
       <div class="catalog">
         <div class="cat-head">
-          <div><h1>תכנית הלימודים</h1><p class="muted small">${esc(K.source)} · 157.5 נק׳ לתואר. כדאי לוודא מול הקטלוג הרשמי לפני רישום.</p></div>
+          <div><h1>תכנית הלימודים</h1><p class="muted small">${esc(K.facultyName)} · מסלול ${esc(K.trackName)} (<span dir="ltr">${esc(K.track)}</span>) · ${K.totals.total} נק׳ לתואר. כדאי לוודא מול הקטלוג הרשמי לפני רישום.</p></div>
+          <label class="small cat-sem-pick">שנת קטלוג: ${V.yearPicker()}</label>
         </div>
+        ${V.sourceHTML()}
         <div class="card cat-summary">
-          ${meter('חובה (כולל 3 נק׳ מעבדה)', sum.mand, K.totals.mandatory, 'var(--accent)')}
+          ${meter(`חובה (כולל ${sum.labNeed} נק׳ מעבדה)`, sum.mand, K.totals.mandatory, 'var(--accent)')}
           ${meter('בחירה פקולטית', sum.fac, K.totals.faculty, 'var(--accent-2)')}
-          ${meter('קבוצות התמחות שהושלמו', sum.groupsDone, 3, 'var(--gold)')}
+          ${meter('קבוצות התמחות שהושלמו', sum.groupsDone, K.minGroups || 3, 'var(--gold)')}
           <p class="muted small cat-sum-note">נספר לפי מספרי הקורסים אצלך (בכל הסמסטרים, כולל ארכיון) — לא לפי ציון.</p>
         </div>
         <div class="toolbar">
@@ -199,6 +233,7 @@
       if (act === 'custom') CT.views.course.courseForm();
     });
     box.querySelector('[data-action=sem]').addEventListener('change', (e) => { view.semId = e.target.value; });
+    box.querySelector('[data-action=cat-year]').addEventListener('change', (e) => V.setYear(e.target.value));
     const q = box.querySelector('[data-action=q]');
     q.addEventListener('input', u.debounce(() => {
       view.q = q.value.trim();

@@ -87,6 +87,7 @@
       lastBackup: null, backupSnooze: null, activeSemesterId: '',
       pomodoro: { work: 25, brk: 5 },
       samplesRemoved: true,
+      catalog: { faculty: 'ee', year: null }, // null = not chosen yet → newest catalog, with a warning
     },
     meta: { createdAt: new Date().toISOString(), updatedAt: null },
   });
