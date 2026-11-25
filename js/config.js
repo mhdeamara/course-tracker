@@ -3,6 +3,6 @@
  * The "anon"/"publishable" key is designed to be public: access is protected by the
  * Row Level Security rules in supabase/schema.sql, so only your signed-in account can read your data. */
 window.CT_CONFIG = {
-  supabaseUrl: '',   // e.g. 'https://abcdefghijkl.supabase.co'
-  supabaseKey: '',   // the project's anon / publishable key
+  supabaseUrl: 'https://xugwweikrcievcqfmfgc.supabase.co', // e.g. 'https://abcdefghijkl.supabase.co'
+  supabaseKey: 'sb_publishable_E2aFrTtj2QadNJZSG0fN4A_82enEWPs', // the project's anon / publishable key
 };

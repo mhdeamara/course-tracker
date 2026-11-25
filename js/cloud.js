@@ -47,11 +47,10 @@
   async function http(path, { method = 'GET', body, token, headers = {} } = {}) {
     const res = await fetch(BASE + path, {
       method,
-      headers: Object.assign({
-        apikey: KEY,
-        Authorization: `Bearer ${token || KEY}`,
-        'Content-Type': 'application/json',
-      }, headers),
+      // new "sb_publishable_" keys are not JWTs: send them only as apikey; Authorization carries the user's token
+      headers: Object.assign({ apikey: KEY, 'Content-Type': 'application/json' },
+        token ? { Authorization: `Bearer ${token}` } : (KEY.startsWith('eyJ') ? { Authorization: `Bearer ${KEY}` } : {}),
+        headers),
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
