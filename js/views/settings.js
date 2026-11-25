@@ -45,6 +45,8 @@
 
         ${catalogSection()}
 
+        ${gpaSection()}
+
         <section class="card">
           <h2>📅 סמסטרים</h2>
           <p class="muted">תאריכי ההתחלה והסיום משמשים לחישוב "קצב צפוי" בסטטיסטיקות. הסמסטר המסומן הוא הסמסטר הפעיל: הדשבורד והמשימות מתייחסים רק אליו.
@@ -142,6 +144,28 @@
     </section>`;
   }
 
+  /** GPA rules — they are not guessed Technion rules: defaults for a personal estimate, each one explained. */
+  function gpaSection() {
+    const r = S.state.settings.gpa;
+    return `<section class="card gpa-rules">
+      <h2>🎓 כללי חישוב הממוצע</h2>
+      <p class="muted small">הכללים האלה קובעים איך מחושב הממוצע בדף "ממוצע וציונים". זו הערכה לצורכי מעקב — הממוצע הרשמי הוא זה שבמערכת האקדמית של הטכניון. אם תקנון הטכניון שונה מברירת המחדל, משנים כאן.</p>
+      <div class="rule-row"><label class="field"><span>קורס שחזרתי עליו</span>
+        <select data-gpa="repeat">${[['last', 'הניסיון האחרון קובע'], ['best', 'הציון הגבוה קובע'], ['all', 'כל הניסיונות נכנסים לממוצע']].map(([k, l]) => `<option value="${k}" ${r.repeat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <p class="muted small">קורסים עם אותו מספר נחשבים אותו קורס. הנקודות נספרות פעם אחת בכל מקרה. ניסיון "נטש" לא נחשב.</p></div>
+      <div class="rule-row"><label class="check-field"><input type="checkbox" data-gpa="failedInAvg" ${r.failedInAvg ? 'checked' : ''}> ציון נכשל נכנס לממוצע</label>
+        <p class="muted small">ציון מתחת לציון העובר: אם מסומן — נכנס לממוצע (בלי נק״ז). אם לא — לא משפיע על הממוצע.</p></div>
+      <div class="rule-row"><label class="field"><span>ציון עובר</span><input type="number" min="0" max="100" data-gpa="passGrade" value="${esc(r.passGrade)}"></label>
+        <p class="muted small">מתחתיו הקורס לא מקנה נקודות זכות.</p></div>
+      <div class="rule-row"><label class="check-field"><input type="checkbox" data-gpa="exemptCredits" ${r.exemptCredits ? 'checked' : ''}> פטור מקנה נקודות זכות</label>
+        <p class="muted small">ברירת מחדל לקורסים חדשים עם "פטור" (אפשר לשנות לכל קורס בחלון הסיום). פטור לעולם לא נכנס לממוצע.</p></div>
+      <div class="rule-row"><label class="field"><span>ספרות אחרי הנקודה</span><select data-gpa="decimals">${[0, 1, 2, 3].map((d) => `<option ${Number(r.decimals) === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+        <p class="muted small">לתצוגה בלבד — החישוב עצמו לא מעוגל.</p></div>
+      <p class="muted small">תמיד: "עובר" (ללא ציון), פטור ונטישה לא נכנסים לממוצע. "עובר" ופטור (לפי ההגדרה) נספרים בנקודות.</p>
+      <button class="btn btn-ghost btn-small" data-action="gpa-defaults">החזר לברירת המחדל</button>
+    </section>`;
+  }
+
   async function login(mode, form) {
     const email = form.querySelector('[name=email]').value.trim();
     const pass = form.querySelector('[name=password]').value;
@@ -182,6 +206,7 @@
         break;
       case 'export': CT.backup.exportFile(); break;
       case 'pre-upgrade': CT.backup.exportPreUpgrade(); break;
+      case 'gpa-defaults': S.commit('כללי ממוצע', (st) => { st.settings.gpa = Object.assign({}, M.DEFAULT_GPA); }); break;
       case 'import': CT.backup.pickImport(); break;
       case 'connect': CT.backup.connect(); break;
       case 'regrant': CT.backup.regrant(); break;
@@ -216,6 +241,12 @@
   function onChange(e) {
     const t = e.target;
     if (t.matches('[data-action=cat-year]')) { CT.views.catalog.setYear(t.value); return; }
+    if (t.dataset.gpa) {
+      const k = t.dataset.gpa;
+      const v = t.type === 'checkbox' ? t.checked : (k === 'passGrade' || k === 'decimals') ? u.clamp(Number(t.value) || 0, 0, 100) : t.value;
+      S.commit('כללי ממוצע', (st) => { st.settings.gpa[k] = v; });
+      return;
+    }
     const sem = t.closest('.sem-row');
     if (sem) {
       const id = sem.dataset.id;

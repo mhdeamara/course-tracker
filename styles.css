@@ -797,3 +797,39 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 }
 
 .finish-suggest { margin: 10px 0 0; }
+
+/* ---------- GPA page ---------- */
+.gpa-disclaimer { color: var(--muted); margin: 0 0 12px; }
+.gpa-filters { display: flex; gap: 10px 16px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.gpa-cats { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.check-inline { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+.gpa-page .stat-cards { margin-bottom: 12px; }
+.gpa-main b { color: var(--accent); }
+.gpa-page .card + .card { margin-top: 12px; }
+.gpa-cat-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
+.trend { width: 100%; height: auto; display: block; }
+.trend .grid { stroke: var(--border); stroke-width: 1; }
+.trend .ax { fill: var(--muted); font-size: 15px; }
+.trend .ln-cum { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.trend .ln-sem { fill: none; stroke: var(--accent-2); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.trend .pt-cum { fill: var(--accent); }
+.trend .pt-sem { fill: var(--accent-2); }
+.trend-legend { display: flex; gap: 8px; align-items: center; color: var(--muted); margin-top: 4px; }
+.lg { display: inline-block; width: 18px; height: 3px; border-radius: 2px; }
+.lg-cum { background: var(--accent); }
+.lg-sem { background: var(--accent-2); }
+.whatif { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.whatif-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.whatif-row input { width: 6em; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: inherit; font: inherit; }
+.whatif-result { margin: 8px 0 0; }
+.whatif-result .up { color: var(--st-done); }
+.whatif-result .down { color: var(--danger); }
+.whatif-h { font-size: .95rem; margin: 18px 0 6px; }
+.whatif-req { display: flex; gap: 12px; flex-wrap: wrap; }
+.whatif-req .field { margin: 0; max-width: 11em; }
+.gpa-table tr.superseded td { opacity: .55; }
+.gpa-table .cell-in { min-width: 9em; }
+.gpa-rules .rule-row { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 4px 16px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.gpa-rules .rule-row p { margin: 0; }
+.gpa-rules .rule-row .field { margin: 0; }
+@media (max-width: 640px) { .gpa-rules .rule-row { grid-template-columns: 1fr; } }
