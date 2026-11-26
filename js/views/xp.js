@@ -108,6 +108,7 @@
       pop(`${signed(-l)} XP`, 'הנקודות על זה הוחזרו — אפשר לצבור שוב כשמסיימים');
     }
     if (g > 0) chime(false);
+    if (r.added.some((e) => e.t === 'pen') && CT.app) CT.app.rerender(); // shows the gentle notice on the home screen
     if (r.level.n > r.levelBefore) {
       const unlocked = G.UNLOCKS.filter((x) => x.level > r.levelBefore && x.level <= r.level.n).map((x) => x.name);
       setTimeout(() => celebrate({
@@ -398,6 +399,173 @@
       };
     });
   }
+
+  /* ---------- home screen notices: pause, "at risk", deductions (always gentle) ---------- */
+  const SEEN_KEY = 'ct.penSeen';
+  const seenPen = () => { try { return localStorage.getItem(SEEN_KEY) || ''; } catch (e) { return ''; } };
+  const nextItem = () => { const a = CT.stats.nextActions(S.activeCourses())[0]; return a ? a.item : null; };
+
+  V.noticeHTML = () => {
+    if (!on() || !S.state.game) return '';
+    const st = S.state, gm = st.game, now = new Date();
+    const pause = G.activePause(gm);
+    if (pause) {
+      return `<div class="banner banner-info game-note" role="status"><span>⏸️ מצב השהיה${pause.reason ? ` · ${esc(G.PAUSE_REASONS[pause.reason] || '')}` : ''}${pause.to ? ` עד ${u.fmtDateFull(pause.to)}` : ''} — בלי ניכויים, והרצף מחכה לך.</span>
+        <span class="banner-actions"><button class="btn btn-small" data-game-act="resume">חזרה לשגרה</button></span></div>`;
+    }
+    const pens = gm.ledger.filter((e) => e.t === 'pen');
+    const unseen = pens.slice(pens.findIndex((x) => x.id === seenPen()) + 1).filter((e) => e.d >= u.addDays(G.dayKey(), -7));
+    const lastPen = unseen[unseen.length - 1];
+    if (lastPen) {
+      const sum = -u.sum(unseen, (e) => e.p);
+      return `<div class="banner banner-warn game-note" role="status"><span>${unseen.length > 1 ? `ב-${unseen.length} ימים` : `ב${dayTitle(lastPen.d) === 'אתמול' ? 'אתמול' : `-${u.fmtDate(lastPen.d)}`}`} לא הגעת למינימום, וירדו ${fmt(sum)} נקודות מהיתרה. הרמה וההישגים לא נפגעים — היום מתחילים מחדש 💪</span>
+        <span class="banner-actions"><a class="btn btn-small btn-ghost" href="#/xp?tab=log">למה?</a><button class="btn btn-small" data-game-act="pen-seen" data-id="${esc(lastPen.id)}">הבנתי</button></span></div>`;
+    }
+    const risk = now.getHours() >= 16 || now.getHours() < G.DAY_START_HOUR ? G.atRisk(st, now) : null;
+    if (risk) {
+      const it = nextItem();
+      const text = risk.penOn
+        ? `עוד לא הגעת למינימום של היום (${risk.need.minItems === 1 ? 'פריט אחד' : `${risk.need.minItems} פריטים`} או ${risk.need.minMinutes} דקות). חמש דקות מספיקות כדי להתחיל${risk.freezesLeft ? ` · נשארו ${risk.freezesLeft} הקפאות החודש` : ''}.`
+        : `רצף של ${risk.streak} ימים מחכה לך היום. משהו קטן מספיק כדי לשמור עליו.`;
+      return `<div class="banner banner-info game-note" role="status"><span>${risk.penOn ? '⏳' : '🔥'} ${text}</span>
+        ${it && CT.focus ? `<span class="banner-actions"><button class="btn btn-small btn-primary" data-game-act="five" data-id="${esc(it.id)}">רק 5 דקות</button></span>` : ''}</div>`;
+    }
+    return '';
+  };
+  if (CT.views.dashboard) CT.views.dashboard.slots.top.push(V.noticeHTML);
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-game-act]');
+    if (!a) return;
+    const act = a.dataset.gameAct;
+    if (act === 'pen-seen') { try { localStorage.setItem(SEEN_KEY, a.dataset.id); } catch (_) { /* ignore */ } CT.app.rerender(); }
+    if (act === 'resume') S.commit('חזרה מהשהיה', (st) => G.resume(st));
+    if (act === 'five' && CT.focus) CT.focus.start(a.dataset.id, 5);
+    if (act === 'pause') {
+      const box = a.closest('.game-settings');
+      const reason = box.querySelector('[name=pause-reason]').value;
+      const until = box.querySelector('[name=pause-until]').value;
+      S.commit('השהיה', (st) => G.pause(st, reason, until));
+      CT.ui.toast('⏸️ מצב השהיה פעיל — בלי ניכויים, והרצף מחכה.');
+    }
+    if (act === 'defaults') {
+      CT.ui.confirm('להחזיר את כל ערכי הנקודות, היעדים והניכויים לברירת המחדל? (הנקודות שכבר נצברו לא משתנות; ניכויים יכובו)', 'החזר').then((ok) => {
+        if (ok) S.commit('ברירת מחדל לנקודות', (st) => { G.ensure(st).cfg = {}; delete st.game.penaltyFrom; });
+      });
+    }
+  });
+
+  /* ---------- settings section (rendered inside the settings page) ---------- */
+  const SEVERITY = { gentle: { amount: 5, capDay: 5, capWeek: 15, label: 'עדין — 5 ביום, עד 15 בשבוע' }, normal: { amount: 15, capDay: 15, capWeek: 45, label: 'רגיל — 15 ביום, עד 45 בשבוע' }, firm: { amount: 25, capDay: 25, capWeek: 75, label: 'משמעותי — 25 ביום, עד 75 בשבוע' } };
+  const sevOf = (pen) => Object.keys(SEVERITY).find((k) => ['amount', 'capDay', 'capWeek'].every((f) => SEVERITY[k][f] === pen[f])) || 'custom';
+  const num = (path, label, v, min, max) => `<label class="field"><span>${label}</span><input type="number" inputmode="numeric" min="${min}" max="${max}" data-game="${path}" value="${v}"></label>`;
+
+  V.settingsHTML = () => {
+    const st = S.state;
+    const gm = G.ensure(st);
+    const cfg = G.cfg(st), p = cfg.pts, pen = cfg.penalty;
+    const pause = G.activePause(gm);
+    const sev = sevOf(pen);
+    return `<section class="card game-settings">
+      <h2>🎮 נקודות, יעדים וניכויים</h2>
+      <div class="form-grid">
+        <label class="check-field"><input type="checkbox" data-game="enabled"${cfg.enabled !== false ? ' checked' : ''}> נקודות ורמות פעילות</label>
+        <label class="check-field"><input type="checkbox" data-game="extras"${cfg.extras !== false ? ' checked' : ''}> יעדים, אתגר יומי והישגים</label>
+      </div>
+      <h3>כמה שווה כל דבר</h3>
+      <div class="form-grid game-grid">
+        ${num('pts.easy', 'פריט קל', p.easy, 0, 200)}${num('pts.normal', 'פריט רגיל', p.normal, 0, 200)}${num('pts.hard', 'פריט קשה', p.hard, 0, 300)}
+        ${num('pts.per10min', 'כל 10 דק׳ לימוד', p.per10min, 0, 50)}
+      </div>
+      <h3>יעדים (פריטים <b>או</b> דקות)</h3>
+      <div class="form-grid game-grid">
+        ${num('goals.day.items', 'ביום — פריטים', cfg.goals.day.items, 1, 50)}${num('goals.day.minutes', 'ביום — דקות', cfg.goals.day.minutes, 5, 600)}
+        ${num('goals.week.items', 'בשבוע — פריטים', cfg.goals.week.items, 1, 200)}${num('goals.week.minutes', 'בשבוע — דקות', cfg.goals.week.minutes, 30, 4000)}
+      </div>
+      <label class="field"><span>תזכורות עדינות באתר</span><select data-game="reminders">
+        ${[['off', 'כבויות'], ['low', 'פעם ביום, אחה״צ, אם עוד לא התחלת'], ['normal', 'כל שעתיים בערך, עד 3 ביום']].map(([k, l]) => `<option value="${k}" ${cfg.reminders === k ? 'selected' : ''}>${l}</option>`).join('')}
+      </select></label>
+
+      <h3>ניכויים על יום מתחת למינימום</h3>
+      <p class="muted small">כבויים עד שמפעילים. יורדים רק מה<b>יתרה</b> (שממנה מממשים פרסים) — לא מהרמה, לא מההישגים, ואף פעם לא מתחת ל-0. אף פעם לא רטרואקטיבי: נספר רק מהיום שבו הופעלו, אחרי ${pen.graceDays} ימי חסד מתחילת השימוש, ורק 7 הימים האחרונים נבדקים. כל ניכוי מופיע ביומן עם הסיבה.</p>
+      <div class="form-grid">
+        <label class="check-field"><input type="checkbox" data-game="penalty.enabled"${pen.enabled ? ' checked' : ''}> להפעיל ניכויים</label>
+        <label class="field"><span>חומרה</span><select data-game="severity" ${pen.enabled ? '' : 'disabled'}>
+          ${Object.entries(SEVERITY).map(([k, v]) => `<option value="${k}" ${sev === k ? 'selected' : ''}>${v.label}</option>`).join('')}
+          ${sev === 'custom' ? `<option value="custom" selected>מותאם: ${pen.amount} ביום, עד ${pen.capWeek} בשבוע</option>` : ''}
+        </select></label>
+      </div>
+      <div class="form-grid game-grid">
+        ${num('penalty.minItems', 'מינימום — פריטים', pen.minItems, 1, 20)}${num('penalty.minMinutes', 'או דקות', pen.minMinutes, 5, 300)}
+        ${num('penalty.freezesPerMonth', 'הקפאות רצף בחודש', pen.freezesPerMonth, 0, 10)}
+      </div>
+      <p class="muted small">הקפאה מכסה אוטומטית יום שהוחמץ — בלי ניכוי ובלי לשבור את הרצף.</p>
+
+      <h3>מצב השהיה (מבחנים / מחלה / חופשה)</h3>
+      ${pause ? `<p>⏸️ מושהה מ-${u.fmtDateFull(pause.from)}${pause.to ? ` עד ${u.fmtDateFull(pause.to)}` : ''} · ${esc(G.PAUSE_REASONS[pause.reason] || '')}</p><button class="btn" data-game-act="resume">חזרה לשגרה</button>`
+        : `<p class="muted small">בזמן השהיה אין ניכויים, אין תזכורות, והרצף לא נשבר. הנקודות ממשיכות להיצבר כרגיל.</p>
+        <div class="form-grid game-grid">
+          <label class="field"><span>סיבה</span><select name="pause-reason">${Object.entries(G.PAUSE_REASONS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+          <label class="field"><span>עד (לא חובה)</span><input type="date" name="pause-until" min="${G.dayKey()}"></label>
+        </div>
+        <button class="btn" data-game-act="pause">⏸️ השהה מהיום</button>`}
+      <div class="btn-row"><button class="btn btn-ghost" data-game-act="defaults">החזר את כל הערכים לברירת המחדל</button></div>
+    </section>`;
+  };
+
+  const setPath = (obj, path, v) => {
+    const ks = path.split('.');
+    let o = obj;
+    ks.slice(0, -1).forEach((k) => { if (typeof o[k] !== 'object' || !o[k]) o[k] = {}; o = o[k]; });
+    o[ks[ks.length - 1]] = v;
+  };
+  V.onSettingsChange = (t) => {
+    const path = t.dataset.game;
+    if (path === 'penalty.enabled') {
+      S.commit(t.checked ? 'הפעלת ניכויים' : 'כיבוי ניכויים', (st) => G.setPenalties(st, t.checked));
+      CT.ui.toast(t.checked ? 'הניכויים פעילים מהיום. ימים קודמים לא נספרים.' : 'הניכויים כבויים.');
+      return;
+    }
+    if (path === 'severity') {
+      const sv = SEVERITY[t.value];
+      if (sv) S.commit('חומרת ניכויים', (st) => { const c = G.ensure(st).cfg; c.penalty = Object.assign({}, c.penalty, { amount: sv.amount, capDay: sv.capDay, capWeek: sv.capWeek }); });
+      return;
+    }
+    let v;
+    if (t.type === 'checkbox') v = t.checked;
+    else if (t.type === 'number') {
+      const n = Math.round(Number(t.value));
+      if (!isFinite(n) || t.value === '') return;
+      v = u.clamp(n, Number(t.min), Number(t.max));
+    } else v = t.value;
+    S.commit('הגדרות נקודות', (st) => setPath(G.ensure(st).cfg, path, v));
+  };
+
+  /* ---------- gentle in-site reminders ---------- */
+  const NUDGE_KEY = 'ct.nudge';
+  function nudgeTick() {
+    const st = S.state;
+    if (!st || !st.game || !on() || document.visibilityState !== 'visible') return;
+    if (CT.focus && CT.focus.active && CT.focus.active()) return;
+    if (document.querySelector('.modal-backdrop, .lvl-up')) return;
+    const cfg = G.cfg(st), mode = cfg.reminders;
+    if (mode === 'off' || G.activePause(st.game)) return;
+    const now = new Date(), day = G.dayKey(now), h = now.getHours();
+    if (h < 10 && h >= G.DAY_START_HOUR) return; // no nudges in the morning
+    let n = {};
+    try { n = JSON.parse(localStorage.getItem(NUDGE_KEY)) || {}; } catch (e) { n = {}; }
+    if (n.day !== day) n = { day, count: 0, last: 0 };
+    const recentXP = st.game.ledger.some((e) => e.p > 0 && Date.now() - Date.parse(e.at) < 2 * 3600e3);
+    const ok = mode === 'low'
+      ? n.count < 1 && (h >= 16 || h < G.DAY_START_HOUR) && !G.minimumMet(G.dayStats(st.game.ledger, day), cfg.penalty)
+      : n.count < 3 && Date.now() - n.last > 2 * 3600e3 && !recentXP;
+    if (!ok) return;
+    const it = nextItem();
+    if (!it) return;
+    n.count++; n.last = Date.now();
+    try { localStorage.setItem(NUDGE_KEY, JSON.stringify(n)); } catch (e) { /* ignore */ }
+    CT.ui.toast(`⏰ אולי ${it.title}? חמש דקות, ואז מחליטים.`, { ms: 12000, action: CT.focus ? { label: 'רק 5 דקות', fn: () => CT.focus.start(it.id, 5) } : null });
+  }
+  setTimeout(() => { nudgeTick(); setInterval(nudgeTick, 60000); }, 20000);
 
   CT.views.xp = V;
 })(window.CT);

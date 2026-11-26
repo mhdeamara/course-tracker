@@ -102,6 +102,8 @@
           <button class="btn" data-action="help">${icon.keyboard} קיצורי מקלדת</button>
         </section>
 
+        ${CT.views.xp ? CT.views.xp.settingsHTML() : ''}
+
         <section class="card">
           <h2>🧹 נתונים</h2>
           <div class="btn-row">
@@ -263,6 +265,7 @@
     if (t.matches('[data-action=cat-spec]')) { CT.views.catalog.setSpec(t.value); return; }
     if (t.dataset.moodlePref) { CT.views.moodle.onChange(t); return; }
     if (t.dataset.aiPref) { CT.views.ai.onChange(t); return; }
+    if (t.dataset.game) { CT.views.xp.onSettingsChange(t); return; }
     if (t.dataset.gpa) {
       const k = t.dataset.gpa;
       const v = t.type === 'checkbox' ? t.checked : (k === 'passGrade' || k === 'decimals') ? u.clamp(Number(t.value) || 0, 0, 100) : t.value;

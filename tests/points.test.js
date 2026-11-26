@@ -357,3 +357,93 @@ test('seasons: XP per semester; level and badges carry over', () => {
   assert.deepEqual(g.titles(st), ['צעדים ראשונים']);
   assert.ok(g.UNLOCKS.every((x) => x.level >= 2));
 });
+
+/* ---------- deductions, pause, freezes ---------- */
+// earn 200 on day 10 so there is a balance to deduct from; points system started on day 1
+const penState = () => {
+  const items = Array.from({ length: 10 }, (_, i) => item(`ש״ב ${i}`));
+  const st = fresh(state([['שיעורי בית', items]]), at(1));
+  items.forEach((i) => { i.status = 'done'; });
+  g.reconcile(st, at(10));
+  return st;
+};
+const pens = (st) => st.game.ledger.filter((e) => e.t === 'pen').map((e) => [e.d, e.p]);
+
+test('deductions are off by default, and turning them on never reaches back', () => {
+  const st = penState();
+  g.reconcile(st, at(20));
+  assert.deepEqual(pens(st), [], 'off by default');
+  g.setPenalties(st, true, at(20));
+  st.game.cfg.penalty.freezesPerMonth = 0;
+  g.reconcile(st, at(20, 13));
+  assert.deepEqual(pens(st), [], 'days before turning on never count');
+  g.reconcile(st, at(21));
+  assert.deepEqual(pens(st), [['2026-11-20', -15]], 'the 20th was below the minimum');
+  g.reconcile(st, at(21, 18));
+  assert.equal(pens(st).length, 1, 'each day is settled once');
+});
+
+test('deductions: daily and weekly caps, never below 0, level never goes down', () => {
+  const st = penState();
+  g.setPenalties(st, true, at(15));
+  Object.assign(st.game.cfg.penalty, { freezesPerMonth: 0, amount: 25, capDay: 20, capWeek: 45 });
+  const levelBefore = g.summary(st, at(15)).level.n;
+  g.reconcile(st, at(22)); // 15..21: week of 15/11 (Sun) gets 20+20+5, then the week of 22/11 starts
+  assert.deepEqual(pens(st).map((x) => x[1]), [-20, -20, -5]);
+  assert.equal(g.balance(st), 200 - 45);
+  assert.equal(g.summary(st, at(22)).level.n, levelBefore);
+  assert.equal(g.earned(st), 200, 'earned XP is untouched');
+  // with nothing left to take, no deduction is written
+  const poor = fresh(state([['x', []]]), at(1));
+  g.setPenalties(poor, true, at(10));
+  poor.game.cfg.penalty.freezesPerMonth = 0;
+  g.reconcile(poor, at(14));
+  assert.deepEqual(pens(poor), []);
+  assert.equal(g.balance(poor), 0);
+});
+
+test('grace period, minimum met, pause and streak freezes each prevent a deduction', () => {
+  const st = penState();
+  g.setPenalties(st, true, at(3)); // inside the first week (system started on day 1)
+  st.game.cfg.penalty.freezesPerMonth = 0;
+  g.reconcile(st, at(9));
+  assert.deepEqual(pens(st).map((x) => x[0]), ['2026-11-08'], 'days 3–7 are grace');
+  // minimum met on day 10 (it has items): no deduction
+  g.reconcile(st, at(12));
+  assert.ok(!pens(st).some((x) => x[0] === '2026-11-10'));
+  assert.ok(pens(st).some((x) => x[0] === '2026-11-11'));
+  // pause from day 12
+  g.pause(st, 'exams', '', at(12));
+  g.reconcile(st, at(16));
+  assert.ok(!pens(st).some((x) => x[0] >= '2026-11-12'), 'paused days are free');
+  g.resume(st, at(16));
+  // freezes: 2 per month cover the first missed days
+  st.game.cfg.penalty.freezesPerMonth = 2;
+  g.reconcile(st, at(20));
+  assert.deepEqual(st.game.freezes, ['2026-11-16', '2026-11-17']);
+  assert.ok(pens(st).some((x) => x[0] === '2026-11-18'));
+});
+
+test('a long absence is not piled up: only the last 7 days are checked', () => {
+  const st = penState();
+  g.setPenalties(st, true, at(10));
+  Object.assign(st.game.cfg.penalty, { freezesPerMonth: 0, capWeek: 1000, capDay: 15 });
+  g.reconcile(st, new Date(2026, 11, 20, 12)); // 40 days later
+  assert.equal(pens(st).length, 7);
+});
+
+test('streak survives paused and frozen days; "at risk" only when it matters', () => {
+  const items = Array.from({ length: 4 }, (_, i) => item(`הרצאה ${i}`));
+  const st = fresh(state([['הרצאות', items]]), at(1));
+  [10, 11, 12].forEach((d, i) => { items[i].status = 'done'; g.reconcile(st, at(d)); });
+  st.game.pauses.push({ id: 'p', from: '2026-11-13', to: '2026-11-15', reason: 'sick' });
+  st.game.freezes.push('2026-11-16');
+  assert.equal(g.streak(st, '2026-11-17').days, 3, 'pause + freeze keep the 3-day streak alive');
+  const risk = g.atRisk(st, at(17, 20));
+  assert.ok(risk && risk.streak === 3 && !risk.penOn, 'a 3-day streak is at risk tonight');
+  items[3].status = 'done'; g.reconcile(st, at(17, 20));
+  assert.equal(g.atRisk(st, at(17, 21)), null, 'minimum met');
+  assert.equal(g.streak(st, '2026-11-17').days, 4);
+  g.pause(st, 'vacation', '', at(18));
+  assert.equal(g.atRisk(st, at(18, 20)), null, 'paused: no warning');
+});

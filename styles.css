@@ -900,6 +900,10 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   .prizes li .pz-cost { display: none; }
 }
 
+.game-note { margin: 0; }
+.game-settings h3 { margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-md); }
+.game-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
 /* ===== "היום" — home screen ===== */
 .dash { display: flex; flex-direction: column; gap: var(--sp-4); }
 .today-head { padding: var(--sp-2) var(--sp-1) 0; }

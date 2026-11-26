@@ -35,7 +35,15 @@
     },
     caps: { item: 400, study: 60, note: 15, start: 15, sub: 30 },
     /** A goal is reached with items OR minutes; both together = a perfect day / week. */
-    goals: { day: { items: 2, minutes: 45 }, week: { items: 10, minutes: 300 } }, // most points per day for each kind
+    goals: { day: { items: 2, minutes: 45 }, week: { items: 10, minutes: 300 } },
+    /**
+     * Deductions for a day below the minimum — OFF until turned on. They lower the spendable balance only
+     * (never the level, never below 0), never apply to the first `graceDays` days, paused days or frozen days,
+     * and are capped per day and per week. Only the last `lookback` days are checked, so a long absence
+     * doesn't pile up.
+     */
+    penalty: { enabled: false, minItems: 1, minMinutes: 25, amount: 15, capDay: 15, capWeek: 45, graceDays: 7, freezesPerMonth: 2, lookback: 7 },
+    reminders: 'low', // in-site nudges: 'off' | 'low' (once a day) | 'normal' (every ~2 hours while open, up to 3 a day) // most points per day for each kind
     streak: [[3, 1.1], [7, 1.2], [14, 1.3], [30, 1.5]], // [days in a row, multiplier] for finished items
   };
 
@@ -107,7 +115,9 @@
     if (!isObj(gm.cfg)) gm.cfg = {};
     if (!Array.isArray(gm.prizes)) gm.prizes = []; // personal prizes: { id, name, cost }
     if (!isObj(gm.look)) gm.look = {}; // chosen in-site rewards: { accent, frame, title, sound }
-    if (!Array.isArray(gm.starts)) gm.starts = []; // "רק 5 דקות" starts: { id, itemId, d, label }
+    if (!Array.isArray(gm.starts)) gm.starts = [];
+    if (!Array.isArray(gm.pauses)) gm.pauses = []; // { id, from, to ('' = still paused), reason }
+    if (!Array.isArray(gm.freezes)) gm.freezes = []; // days a streak freeze covered // "רק 5 דקות" starts: { id, itemId, d, label }
     if (!gm.since) gm.since = new Date(now).toISOString();
     st.game = gm;
     if (fresh) gm.base = currentKeys(st, g.cfg(st));
@@ -142,10 +152,12 @@
   g.streak = (st, today = g.dayKey()) => {
     const days = new Set();
     ((st.game && st.game.ledger) || []).forEach((e) => { if (e.p > 0 && e.t !== 'rev') days.add(e.d); });
+    const gm = st.game || {};
+    const neutral = (d) => g.pausedOn(gm, d) || (gm.freezes || []).includes(d);
     let d = today;
     if (!days.has(d)) d = u.addDays(d, -1);
     let n = 0;
-    while (days.has(d)) { n++; d = u.addDays(d, -1); }
+    for (let guard = 0; guard < 800 && (days.has(d) || neutral(d)); guard++) { if (days.has(d)) n++; d = u.addDays(d, -1); }
     return { days: n, today: days.has(today) };
   };
 
@@ -195,11 +207,12 @@
     const gm = st.game;
     if (cfg.enabled === false) return [];
     const L = gm.ledger;
+    const penalties = g.settlePenalties(st, cfg, now); // past days only; final entries
     const base = new Set(gm.base);
     const { last, net } = keyIndex(L);
     const at = new Date(now).toISOString();
     const day = g.dayKey(now);
-    const added = [];
+    const added = penalties.slice();
     const isActive = (k) => last.has(k) && last.get(k).t !== 'rev';
     const sem = (st.settings && st.settings.activeSemesterId) || '';
     const push = (e) => { const x = Object.assign({ id: u.uid(), at, d: day, sem }, e); L.push(x); last.set(x.k, x); net.set(x.k, (net.get(x.k) || 0) + x.p); added.push(x); };
@@ -276,6 +289,75 @@
       if (!last.has(k) && b.test(ctx)) award(k, 'badge', cfg.pts.badge, ['הישג חדש'], b.name, { icon: b.icon });
     });
     return added;
+  };
+
+  /* ---------- pause, streak freezes, deductions ---------- */
+  g.pausedOn = (gm, day) => (gm.pauses || []).some((x) => x.from <= day && (!x.to || day <= x.to));
+  g.activePause = (gm, day = g.dayKey()) => (gm.pauses || []).find((x) => x.from <= day && (!x.to || day <= x.to)) || null;
+  g.PAUSE_REASONS = { exams: 'תקופת מבחנים', sick: 'מחלה', vacation: 'חופשה', other: 'אחר' };
+
+  /** The minimum for a day (items OR minutes). */
+  g.minimumMet = (s, pen) => s.items >= pen.minItems || s.minutes >= pen.minMinutes;
+
+  /**
+   * Looks at each finished day not yet settled (up to yesterday): met the minimum → nothing; paused → nothing;
+   * a freeze left this month → the freeze covers it; otherwise a capped deduction. Each day is settled once.
+   */
+  g.settlePenalties = (st, cfg, now = new Date()) => {
+    const gm = st.game, pen = cfg.penalty || {};
+    const today = g.dayKey(now), yesterday = u.addDays(today, -1);
+    if (!pen.enabled || !gm.penaltyFrom) return [];
+    const graceEnd = u.addDays(g.dayKey(gm.since), pen.graceDays || 0);
+    let from = [gm.penaltyFrom, graceEnd, gm.penChecked ? u.addDays(gm.penChecked, 1) : '', u.addDays(today, -(pen.lookback || 7))].sort().pop();
+    const out = [];
+    for (let d = from; d <= yesterday; d = u.addDays(d, 1)) {
+      if (g.pausedOn(gm, d) || g.minimumMet(g.dayStats(gm.ledger, d), pen)) continue;
+      const month = d.slice(0, 7);
+      if (gm.freezes.filter((x) => x.startsWith(month)).length < (pen.freezesPerMonth || 0)) { gm.freezes.push(d); continue; }
+      const wk = u.weekStart(d);
+      const weekUsed = -u.sum(gm.ledger.filter((e) => e.t === 'pen' && u.weekStart(e.d) === wk), (e) => e.p);
+      const amt = Math.max(0, Math.min(pen.amount, pen.capDay, pen.capWeek - weekUsed, g.balance(st)));
+      if (amt <= 0) continue;
+      const e = { id: u.uid(), k: 'pen:' + d, t: 'pen', p: -amt, at: new Date(now).toISOString(), d, sem: (st.settings && st.settings.activeSemesterId) || '', why: ['מתחת למינימום היומי'], label: 'מינימום יומי' };
+      gm.ledger.push(e);
+      out.push(e);
+    }
+    if (yesterday >= from || !gm.penChecked) gm.penChecked = [gm.penChecked || '', yesterday].sort().pop();
+    return out;
+  };
+
+  /** Turning deductions on never reaches back: the first day that can count is today. */
+  g.setPenalties = (st, on, now = new Date()) => {
+    const gm = g.ensure(st);
+    gm.cfg.penalty = Object.assign({}, gm.cfg.penalty, { enabled: !!on });
+    if (on) { gm.penaltyFrom = g.dayKey(now); gm.penChecked = u.addDays(g.dayKey(now), -1); } else delete gm.penaltyFrom;
+  };
+  /** Pause (exams / sickness / vacation): no deductions, the streak waits. `until` '' = until resumed. */
+  g.pause = (st, reason, until = '', now = new Date()) => {
+    const gm = g.ensure(st);
+    gm.pauses.push({ id: u.uid(), from: g.dayKey(now), to: until || '', reason: reason || 'other' });
+  };
+  g.resume = (st, now = new Date()) => {
+    const gm = g.ensure(st), today = g.dayKey(now);
+    // a pause that started today is simply dropped; an older one ends yesterday
+    gm.pauses = gm.pauses.filter((x) => !(x.from === today && (!x.to || x.to >= today)));
+    gm.pauses.forEach((x) => { if (x.from < today && (!x.to || x.to >= today)) x.to = u.addDays(today, -1); });
+  };
+
+  /** Today, before the day ends: is the minimum still missing? (for the gentle "at risk" note) */
+  g.atRisk = (st, now = new Date()) => {
+    const gm = st.game, cfg = g.cfg(st), pen = cfg.penalty;
+    const day = g.dayKey(now);
+    if (!gm || cfg.enabled === false) return null;
+    if (g.activePause(gm, day)) return null;
+    const s = g.dayStats(gm.ledger, day);
+    const streak = g.streak(st, day);
+    const penOn = pen.enabled && gm.penaltyFrom && day >= gm.penaltyFrom;
+    if (g.minimumMet(s, pen)) return null;
+    if (!penOn && streak.days < 3) return null;
+    const month = day.slice(0, 7);
+    const freezesLeft = Math.max(0, (pen.freezesPerMonth || 0) - gm.freezes.filter((x) => x.startsWith(month)).length);
+    return { penOn, streak: streak.days, freezesLeft, need: pen, s };
   };
 
   /* ---------- day / week numbers, goals, challenge ---------- */
