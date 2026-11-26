@@ -1,9 +1,9 @@
 /* sw.js — offline support: serve the app's own files from a local cache, refresh them in the background.
  * Requests to other sites (the Supabase cloud) are never cached. */
-const CACHE = 'course-tracker-v23';
+const CACHE = 'course-tracker-v24';
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'].map((u) => new Request(u, { cache: 'no-cache' })))));
   self.skipWaiting();
 });
 
@@ -18,7 +18,9 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(caches.open(CACHE).then(async (cache) => {
     const cached = await cache.match(req, { ignoreSearch: true });
-    const network = fetch(req).then((res) => {
+    // 'no-cache' = always ask the server (a cheap 304 when nothing changed), so a new release isn't hidden
+    // behind the browser's HTTP cache (GitHub Pages sends max-age=600)
+    const network = fetch(req, { cache: 'no-cache' }).then((res) => {
       if (res.ok) cache.put(req, res.clone());
       return res;
     }).catch(() => cached);
