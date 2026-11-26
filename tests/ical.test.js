@@ -148,10 +148,10 @@ test('your own title or date on a synced item is not overwritten by a Moodle cha
   const st = state(c);
   Mo.merge(st, events(E1), OPTS);
   const it = items(c)[0];
-  it.title = 'ש״ב 1 — עם יואב';
+  it.title = 'ש״ב 1 — עם דנה';
   it.due = '2026-12-08';
   Mo.merge(st, events({ ...E1, summary: 'שם אחר is due', start: '20261214T215900Z' }), OPTS);
-  assert.equal(it.title, 'ש״ב 1 — עם יואב');
+  assert.equal(it.title, 'ש״ב 1 — עם דנה');
   assert.equal(it.due, '2026-12-08');
   assert.equal(it.source.due, '2026-12-14'); // Moodle's value is still recorded
   assert.ok(it.source.changed);
@@ -375,4 +375,154 @@ test('link range: moving windows are fine, short ones and missing "all events" w
   assert.equal(Mo.rangeInfo('monthnext', 'all').warn, true);
   assert.equal(Mo.rangeInfo('custom', 'courses').warn, true);
   assert.match(Mo.rangeInfo(null, null).text, /שמירה מחדש/);
+});
+
+/* ================= event categories ================= */
+const cls = (title, rawTitle, category = '00440137.200', st = { courses: [] }) => Mo.classify(st, { title, rawTitle: rawTitle || title, category }).cls;
+
+test('classify: Hebrew names (real Moodle titles)', () => {
+  assert.equal(cls('תרגול דנה'), 'tut');
+  assert.equal(cls('תרגול + שעת קבלה - דנה'), 'tut');
+  assert.equal(cls('הרצאות - קבוצה 20 - מבוא'), 'lec');
+  assert.equal(cls('תרגיל הכנה מספר 3'), 'prep');
+  assert.equal(cls('שיעור הכנה 2'), 'prep');
+  assert.equal(cls('תרגיל בית 4'), 'hw');
+  assert.equal(cls('בוחן אמצע'), 'exam');
+  assert.equal(cls('ש״ב 2'), 'hw', 'Hebrew gershayim are read as a plain quote');
+  assert.equal(cls('הגשת המטלה'), 'hw', 'keyword after the prefix letter ה');
+});
+
+test('classify: English names, whole words only', () => {
+  assert.equal(cls('HW2 Submission'), 'hw');
+  assert.equal(cls('Homework 3'), 'hw');
+  assert.equal(cls('Midterm exam'), 'exam');
+  assert.equal(cls('Lab 4 report'), 'lab');
+  assert.equal(cls('Tutorial 5'), 'tut');
+  assert.equal(cls('Syllabus update'), '', '"lab" inside "Syllabus" does not count');
+});
+
+test('classify: several keywords — "דוח מעבדה" is a lab, two different classes → not sure', () => {
+  assert.equal(cls('דוח מעבדה 2'), 'lab');
+  assert.equal(cls('הגשת דוח מעבדה 2'), 'lab', '"הגשת" is not a keyword; the report decides');
+  const r = Mo.classify({ courses: [] }, { title: 'תרגול לקראת המבחן', rawTitle: 'תרגול לקראת המבחן', category: 'x' });
+  assert.equal(r.cls, '');
+  assert.equal(r.why, 'ambiguous');
+  assert.deepEqual(r.candidates.sort(), ['exam', 'tut']);
+});
+
+test('classify: no keywords → not classified; Moodle\'s "יש להגיש את" alone → assignments', () => {
+  const st = { courses: [] };
+  assert.equal(cls('רישום לזוגות (Due date)'), '');
+  assert.equal(Mo.classify(st, { title: 'פגישה', rawTitle: 'פגישה', category: '' }).why, 'none');
+  const t = Mo.cleanTitle("יש להגיש את 'Project proposal'");
+  assert.equal(t, 'Project proposal');
+  assert.equal(cls(t, "יש להגיש את 'Project proposal'"), 'hw');
+  assert.equal(Mo.cleanTitle('תאריך הגשה Project proposal'), 'Project proposal');
+  assert.equal(cls('Project proposal', 'תאריך הגשה Project proposal'), 'hw');
+  assert.equal(cls('תרגול 3', "יש להגיש את 'תרגול 3'"), 'tut', 'a keyword is more specific than the prefix');
+});
+
+const S_TUT = { uid: '201@moodle26.technion.ac.il', summary: 'תרגול דנה', start: '20261201T083000Z', cats: '00440137.200' };
+const S_TUT2 = { uid: '202@moodle26.technion.ac.il', summary: 'תרגול דנה', start: '20261208T083000Z', cats: '00440137.200' };
+const S_HW = { uid: '203@moodle26.technion.ac.il', summary: "יש להגיש את 'תרגיל בית 2'", start: '20261210T215900Z', cats: '00440137.200' };
+const S_LAB = { uid: '204@moodle26.technion.ac.il', summary: 'דוח מעבדה 1', start: '20261211T215900Z', cats: '00440137.200' };
+const S_ODD = { uid: '205@moodle26.technion.ac.il', summary: 'רישום לזוגות', start: '20261212T215900Z', cats: '00440137.200' };
+
+test('sync: deadlines go to their course table, sessions and unclassified stay on "המודל שלי"', () => {
+  const c = course({ number: '00440137' });
+  const st = state(c);
+  const r = Mo.merge(st, events(S_TUT, S_HW, S_LAB, S_ODD), OPTS);
+  assert.equal(r.added, 2);
+  assert.equal(r.listed, 2);
+  assert.equal(r.unclassified, 1);
+  assert.deepEqual(c.categories.map((x) => x.name).sort(), ['מעבדות', 'שיעורי בית']);
+  assert.equal(items(c).find((x) => x.source.uid === S_HW.uid).title, 'תרגיל בית 2');
+  assert.deepEqual(st.moodle.events.map((e) => [e.uid, e.cls]), [[S_TUT.uid, 'tut'], [S_ODD.uid, '']]);
+  assert.deepEqual(r.changes.map((x) => x.uid).sort(), [S_HW.uid, S_LAB.uid, S_ODD.uid].sort(), 'no "new" alert for a tutorial');
+  // again: nothing new, nothing moves
+  const r2 = Mo.merge(st, events(S_TUT, S_HW, S_LAB, S_ODD), OPTS);
+  assert.deepEqual([r2.added, r2.listed, r2.reclassified, r2.unchanged], [0, 0, 0, 4]);
+});
+
+test('manual class: remembered for similar events, wins over the rules, survives every sync', () => {
+  const c = course({ number: '00440137' });
+  const st = state(c);
+  Mo.merge(st, events(S_ODD, S_TUT), OPTS);
+  // "רישום לזוגות" → assignments: leaves "המודל שלי" for the course page
+  assert.equal(Mo.setClass(st, S_ODD.uid, 'hw', OPTS), 1);
+  assert.equal(items(c).find((x) => x.source.uid === S_ODD.uid).source.cls, 'hw');
+  // a tutorial you call a lab: the rule says תרגולים, your choice wins — for the next "תרגול דנה" too
+  Mo.setClass(st, S_TUT.uid, 'lab', OPTS);
+  const r = Mo.merge(st, events(S_ODD, S_TUT, S_TUT2), OPTS);
+  const lab = c.categories.find((x) => x.name === 'מעבדות');
+  assert.deepEqual(lab.items.map((x) => x.source.uid).sort(), [S_TUT.uid, S_TUT2.uid]);
+  assert.equal(st.moodle.events.length, 0);
+  assert.equal(r.reclassified, 0, 'sync does not undo your choice');
+  assert.equal(Mo.classify(st, { title: 'תרגול דנה', rawTitle: 'תרגול דנה', category: '00440137.200' }).why, 'manual');
+  // you can change it at any time; forgetting it returns the events to the rules
+  const [rule] = Mo.classRules(st).filter((x) => x.cls === 'lab');
+  assert.equal(rule.pattern, 'תרגול דנה');
+  Mo.clearClass(st, rule.key, OPTS);
+  assert.deepEqual(st.moodle.events.map((e) => e.cls), ['tut', 'tut'], 'untouched items go back to "המודל שלי"');
+});
+
+test('reclassify: items synced before categories move to the right place, unless you touched or moved them', () => {
+  const c = course({ number: '00440137' });
+  const st = state(c);
+  const hw = { id: 'h', name: 'שיעורי בית', items: [] };
+  const mine = { id: 'm', name: 'שלי', items: [] };
+  c.categories.push(hw, mine);
+  const old = (u, title, extra = {}) => Object.assign({ id: u, title, status: 'todo', note: '', due: '2026-12-01', link: '', tags: [], flag: false,
+    source: { kind: 'moodle', uid: u, title, rawTitle: title, due: '2026-12-01', dueTime: '10:30', url: '', category: '00440137.200', changed: null, gone: null, mergeWith: null } }, extra);
+  hw.items.push(old('a@m', 'תרגול דנה'), old('b@m', 'תרגול דנה', { note: 'שאלה 3' }), old('c@m', 'דוח מעבדה 1'));
+  mine.items.push(old('d@m', 'דוח מעבדה 2'));
+  Mo.ensure(st);
+  Mo.reclassifyAll(st, OPTS);
+  assert.deepEqual(hw.items.map((x) => x.id), ['b@m'], 'the tutorial with your note stays');
+  assert.equal(hw.items[0].source.cls, 'tut');
+  assert.deepEqual(st.moodle.events.map((e) => e.uid), ['a@m']);
+  assert.deepEqual(c.categories.find((x) => x.name === 'מעבדות').items.map((x) => x.id), ['c@m']);
+  assert.deepEqual(mine.items.map((x) => x.id), ['d@m'], 'an item you moved yourself stays in your table');
+});
+
+test('cleaner titles from the same Moodle text update quietly (no "changed" flood)', () => {
+  const c = course({ number: '00440137' });
+  const st = state(c);
+  Mo.merge(st, events(S_HW), OPTS);
+  const it = items(c)[0];
+  // as stored by the older version, which did not strip "יש להגיש את"
+  Object.assign(it, { title: S_HW.summary });
+  Object.assign(it.source, { title: S_HW.summary });
+  const r = Mo.merge(st, events(S_HW), OPTS);
+  assert.equal(r.updated, 0);
+  assert.equal(it.title, 'תרגיל בית 2');
+  assert.equal(it.source.changed, null);
+  assert.equal(r.changes.length, 0);
+});
+
+test('editing categories: rename, keywords, new class, delete, defaults back', () => {
+  const st = { courses: [] };
+  const mo = Mo.ensure(st);
+  assert.deepEqual(mo.classes.map((c) => c.id), ['hw', 'prep', 'tut', 'lec', 'exam', 'lab', 'other']);
+  const proj = Mo.addClass(st, 'פרויקט');
+  assert.equal(Mo.addClass(st, 'פרויקט'), null, 'no duplicate names');
+  assert.equal(Mo.addClass(st, 'לא מסווג'), null);
+  proj.keywords = Mo.parseKeywords('פרויקט, project\nproposal, פרויקט');
+  assert.deepEqual(proj.keywords, ['פרויקט', 'project', 'proposal']);
+  assert.equal(cls('Project proposal', 'Project proposal', 'x', st), proj.id);
+  mo.classMap['x|a'] = proj.id;
+  Mo.removeClass(st, proj.id);
+  assert.equal(mo.classMap['x|a'], undefined);
+  assert.equal(cls('Project proposal', 'Project proposal', 'x', st), '');
+  mo.classes[0].name = 'הגשות';
+  Mo.resetClasses(st);
+  assert.equal(mo.classes[0].name, 'מטלות והגשות');
+});
+
+test('pattern key: same course, same name up to numbers', () => {
+  assert.equal(Mo.patternKey('00440137.200', 'תרגיל בית 3'), Mo.patternKey('00440137.200', 'תרגיל בית 12'));
+  assert.notEqual(Mo.patternKey('00440137.200', 'תרגיל בית 3'), Mo.patternKey('00440148.100', 'תרגיל בית 3'));
+  assert.equal(Mo.patternKey('c', 'מטלת מודל 1 - אורך גל וניסוי בראג'), Mo.patternKey('c', 'מטלת מודל 2 - אפקט פוטואלקטרי'), 'the topic after " - " is not part of it');
+  assert.equal(Mo.patternKey('c', 'תרגול + שעת קבלה - דנה'), 'c|תרגול שעת קבלה');
+  assert.equal(Mo.patternKey('c', '3 - מבוא'), 'c|# מבוא', 'a head without letters keeps the whole name');
 });

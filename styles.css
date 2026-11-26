@@ -926,3 +926,30 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .mm-change-list li { padding: 4px 8px; border-radius: 8px; }
 .mm-change-list li.unseen { background: var(--surface-2); font-weight: 600; }
 .mm-kind { display: inline-block; min-width: 7.5em; }
+/* event categories */
+.mm-tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+.mm-tab { flex: 0 0 auto; border: 0; background: none; color: var(--muted); padding: 8px 12px; border-radius: 8px 8px 0 0; font: inherit; font-size: .92rem; cursor: pointer; white-space: nowrap; }
+.mm-tab:hover { background: var(--surface-2); color: var(--text); }
+.mm-tab.active { color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.mm-tab-none { color: var(--danger); }
+.mm-count { display: inline-block; min-width: 1.5em; padding: 0 6px; border-radius: 999px; background: var(--surface-2); font-size: .78rem; text-align: center; }
+.mm-tab.active .mm-count { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.mm-list .mm-cls { flex: 0 0 auto; max-width: 9.5em; font-size: .8rem; padding: 2px 8px; }
+.mm-dot { flex: 0 0 auto; width: 22px; text-align: center; color: var(--muted); font-weight: 700; }
+.mm-dot-q { color: var(--danger); }
+.pill.mm-new { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); font-size: .72rem; margin-inline-end: 4px; }
+.mm-unclassified { margin: 0; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.mm-classes { margin: 12px 0; }
+.mm-classes summary { cursor: pointer; }
+.mm-cls-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin: 8px 0; }
+.mm-cls-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.mm-cls-row textarea { width: 100%; resize: vertical; font-size: .85rem; }
+.mm-cls-head { display: flex; gap: 6px; align-items: center; }
+.mm-cls-head .mm-cls-name { flex: 1; font-weight: 600; }
+.mm-cls-opts { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.mm-cls-opts .input-sm { width: 9em; padding: 4px 8px; font-size: .85rem; }
+@media (max-width: 600px) {
+  .mm-list li { flex-wrap: wrap; }
+  .mm-list .u-title { flex: 1 1 calc(100% - 44px); }
+  .mm-list .mm-cls { order: 5; margin-inline-start: 30px; max-width: none; }
+}

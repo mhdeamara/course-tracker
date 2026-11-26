@@ -25,9 +25,110 @@
   //   prevTitle, prevDue, prevTime, course, unassigned, seen }) — titles and dates only, at most CHANGES_MAX.
   // lastHash / serverAt / serverCheckedAt: the last calendar taken from the server snapshot (scheduled refresh).
   // horizon: the farthest deadline in the last calendar (how far ahead the link reaches).
+  // classes: the event categories (editable; see defaultClasses). classMap: your choices, { patternKey: classId }.
+  // events: synced events that are not on a course page — classes with toCourse off (תרגולים, הרצאות) and events
+  //   not classified yet ({ uid, courseId, cls, title, rawTitle, due, dueTime, url, category, gone }).
   Mo.emptyState = () => ({ map: {}, uidMap: {}, ignored: {}, known: {}, inbox: [], last: null, auto: true, periodic: true, lastLink: null, linkError: null,
-    changes: [], lastHash: null, serverAt: null, serverCheckedAt: null, horizon: null });
+    changes: [], lastHash: null, serverAt: null, serverCheckedAt: null, horizon: null,
+    classes: Mo.defaultClasses(), classMap: {}, events: [] });
   Mo.CHANGES_MAX = 100;
+
+  /* ---------- event categories ---------- */
+  // keywords: matched in the activity name (Hebrew: also after a prefix letter ו/ה/ב/ל/ש/מ/כ; English: whole word, a
+  // number may follow, e.g. HW2). courseCat: the table on the course page. toCourse: add items to the course page.
+  // inAll: shown in the "הכל" tab of "המודל שלי". "לא מסווג" is class id '' and is not in this list.
+  Mo.UNCLASSIFIED = 'לא מסווג';
+  Mo.defaultClasses = () => [
+    { id: 'hw', name: 'מטלות והגשות', courseCat: HW_NAME, toCourse: true, inAll: true,
+      keywords: ['תרגיל בית', 'תרגילי בית', 'שיעורי בית', 'ש"ב', 'מטלה', 'מטלת', 'מטלות', 'תרגיל יבש', 'תרגיל רטוב', 'יבש', 'רטוב', 'תרגיל מחשב', 'hw', 'homework', 'assignment'] },
+    { id: 'prep', name: 'תרגילי הכנה', courseCat: 'תרגילי הכנה', toCourse: true, inAll: true,
+      keywords: ['תרגיל הכנה', 'תרגילי הכנה', 'שיעור הכנה', 'שאלות הכנה', 'דוח הכנה', 'הכנה', 'prelab', 'preparation'] },
+    { id: 'tut', name: 'תרגולים', courseCat: 'תרגולים', toCourse: false, inAll: false,
+      keywords: ['תרגול', 'תרגולים', 'tutorial', 'recitation'] },
+    { id: 'lec', name: 'הרצאות', courseCat: 'הרצאות', toCourse: false, inAll: false,
+      keywords: ['הרצאה', 'הרצאות', 'lecture'] },
+    { id: 'exam', name: 'בחנים ומבחנים', courseCat: 'בחנים ומבחנים', toCourse: true, inAll: true,
+      keywords: ['מבחן', 'מבחנים', 'בוחן', 'בחנים', 'בחינה', 'quiz', 'exam', 'midterm', 'final exam'] },
+    { id: 'lab', name: 'מעבדות', courseCat: 'מעבדות', toCourse: true, inAll: true,
+      keywords: ['מעבדה', 'מעבדות', 'מעבדת', 'דוח מעבדה', 'דו"ח מעבדה', 'ניסוי', 'lab', 'lab report'] },
+    { id: 'other', name: 'אחר', courseCat: 'אחר', toCourse: true, inAll: true, keywords: [] },
+  ];
+  Mo.classById = (st, id) => (id ? (Mo.ensure(st).classes.find((c) => c.id === id) || null) : null);
+  Mo.className = (st, id) => { const c = Mo.classById(st, id); return c ? c.name : Mo.UNCLASSIFIED; };
+
+  // text as the classifier sees it: lower case, no niqqud, Hebrew quote marks as plain quotes, single spaces
+  const normText = (s) => String(s || '').toLowerCase().replace(/[֑-ׇ]/g, '').replace(/[״“”]/g, '"').replace(/[׳‘’`]/g, "'").replace(/\s+/g, ' ').trim();
+  const HEB = /[א-ת]/;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const kwCache = new Map();
+  /** A keyword as a regex: Hebrew may follow up to two prefix letters and take any ending; English is a whole word
+   *  (plural s/es allowed, a number may follow). */
+  function kwRegex(kw) {
+    const k = normText(kw);
+    if (!k) return null;
+    if (kwCache.has(k)) return kwCache.get(k);
+    const body = esc(k).replace(/ /g, '\\s+');
+    const re = HEB.test(k[0])
+      ? new RegExp(`(?:^|[^א-תa-z0-9])(?:[ובהלשמכ]{1,2})?(${body})`, 'g')
+      : new RegExp(`(?:^|[^a-z])(${body})(?:e?s)?(?![a-z])`, 'g');
+    kwCache.set(k, re);
+    return re;
+  }
+  /** Where `kw` occurs in normalized text: [{ start, end }]. */
+  function kwSpans(text, kw) {
+    const re = kwRegex(kw);
+    if (!re) return [];
+    re.lastIndex = 0;
+    const out = [];
+    let m;
+    while ((m = re.exec(text))) {
+      const start = m.index + m[0].length - m[1].length;
+      out.push({ start, end: start + m[1].length });
+      re.lastIndex = start + 1;
+    }
+    return out;
+  }
+  // Moodle's own wording for a submission deadline — used only when no keyword matched
+  // (the assignment module's "יש להגיש את '…'" / "… is due" and its closing date "תאריך הגשה …" / "… closes")
+  const SUBMIT_HINT = /^\s*(?:יש להגיש את|תאריך הגשה)|\b(?:is due|closes)\s*$/i;
+
+  /** The pattern your manual choice is remembered by: Moodle course + activity name up to " - " (the topic after it
+   *  varies), numbers removed — so "מטלת מודל 1 - X" and "מטלת מודל 2 - Y" of the same course share it. */
+  Mo.patternKey = (category, title) => {
+    const t = normText(title);
+    const head = t.split(/\s[-–]\s/)[0];
+    const name = (head.replace(/[^א-תa-z]/g, '').length >= 2 ? head : t)
+      .replace(/["'.,:;!?()[\]\-–_/\+]+/g, ' ').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
+    return `${normText(category)}|${name}`;
+  };
+
+  /**
+   * The class of an event snapshot ({ title, rawTitle, category }). Never guesses:
+   *  1. your choice for this pattern (classMap) always wins;
+   *  2. keywords: a match inside a longer match of another class does not count ("הכנה" inside "דוח הכנה");
+   *     exactly one class left → that class; two or more → '' (not sure);
+   *  3. no keyword at all, but Moodle's wording says it is a submission ("יש להגיש את …") → מטלות והגשות;
+   *  4. otherwise ''.
+   * Returns { cls, why: 'manual'|'keyword'|'prefix'|'ambiguous'|'none', words: [matched keywords], candidates }.
+   */
+  Mo.classify = (st, snap) => {
+    const mo = Mo.ensure(st);
+    const key = Mo.patternKey(snap.category, snap.title);
+    if (Object.prototype.hasOwnProperty.call(mo.classMap, key)) {
+      const id = mo.classMap[key];
+      if (id === '' || mo.classes.some((c) => c.id === id)) return { cls: id, why: 'manual', words: [], candidates: [] };
+    }
+    const text = normText(snap.title);
+    const hits = [];
+    mo.classes.forEach((c) => (c.keywords || []).forEach((kw) => kwSpans(text, kw).forEach((sp) => hits.push(Object.assign({ cls: c.id, kw }, sp)))));
+    const kept = hits.filter((h) => !hits.some((o) => o.cls !== h.cls && o.start <= h.start && o.end >= h.end && (o.end - o.start) > (h.end - h.start)));
+    const classes = [...new Set(kept.map((h) => h.cls))];
+    const words = [...new Set(kept.map((h) => h.kw))];
+    if (classes.length === 1) return { cls: classes[0], why: 'keyword', words, candidates: classes };
+    if (classes.length > 1) return { cls: '', why: 'ambiguous', words, candidates: classes };
+    if (mo.classes.some((c) => c.id === 'hw') && SUBMIT_HINT.test(snap.rawTitle || snap.title || '')) return { cls: 'hw', why: 'prefix', words: [], candidates: ['hw'] };
+    return { cls: '', why: 'none', words: [], candidates: [] };
+  };
 
   /* ---------- the calendar link (same rules as the Edge Function and the SQL check) ---------- */
   Mo.HOST_RE = /^moodle\d{0,2}\.technion\.ac\.il$/;
@@ -53,6 +154,9 @@
     ['map', 'uidMap', 'ignored', 'known'].forEach((k) => { if (!st.moodle[k] || typeof st.moodle[k] !== 'object' || Array.isArray(st.moodle[k])) st.moodle[k] = {}; });
     if (!Array.isArray(st.moodle.inbox)) st.moodle.inbox = [];
     if (!Array.isArray(st.moodle.changes)) st.moodle.changes = [];
+    if (!Array.isArray(st.moodle.events)) st.moodle.events = [];
+    if (!st.moodle.classMap || typeof st.moodle.classMap !== 'object' || Array.isArray(st.moodle.classMap)) st.moodle.classMap = {};
+    if (!Array.isArray(st.moodle.classes)) st.moodle.classes = Mo.defaultClasses();
     return st.moodle;
   };
 
@@ -62,10 +166,15 @@
   // Moodle appends these to the activity name; the item shows the name alone
   const SUFFIX = /\s*(?:[-–:]\s*)?(?:is due|is due to be graded|closes|due|נסגר|נסגרת|סגירה|להגשה|יש להגיש|מועד הגשה|תאריך הגשה)\s*$/i;
   const PREFIX = /^\s*(?:מועד הגשה|תאריך הגשה|הגשת|הגשה)\s*[:\-–]\s*/;
+  // the assignment module's own wording: "יש להגיש את 'תרגיל 3'" (due) and "תאריך הגשה תרגיל 3" (closes)
+  const MOODLE_PREFIX = /^\s*(?:יש להגיש את|תאריך הגשה)\s+/;
+  const QUOTED = /^['"“”‘’׳״](.+?)['"“”‘’׳״]$/;
 
   Mo.isOpening = (ev) => OPENS.test(ev.summary || '');
   Mo.cleanTitle = (s) => {
-    const t = String(s || '').replace(SUFFIX, '').replace(PREFIX, '').trim();
+    let t = String(s || '').replace(SUFFIX, '').replace(PREFIX, '').replace(MOODLE_PREFIX, '').trim();
+    const q = t.match(QUOTED);
+    if (q) t = q[1].trim();
     return t || String(s || '').trim() || 'מטלה ממודל';
   };
   /** Course number → 8 digits (old 6-digit 044131 → 00440131); '' when there is none. */
@@ -149,18 +258,38 @@
     };
     return Object.assign(base, {
       title: snap.title, due: snap.due, link: snap.url,
-      source: { kind: 'moodle', uid: snap.uid, title: snap.title, rawTitle: snap.rawTitle, due: snap.due, dueTime: snap.dueTime, url: snap.url, category: snap.category, changed: null, gone: null, mergeWith: null },
+      source: { kind: 'moodle', uid: snap.uid, title: snap.title, rawTitle: snap.rawTitle, due: snap.due, dueTime: snap.dueTime, url: snap.url, category: snap.category, cls: snap.cls || '', changed: null, gone: null, mergeWith: null },
     });
   }
-  /** The course's homework category (created when missing). */
-  Mo.hwCategory = (course, opts = {}) => {
-    let cat = course.categories.find((c) => c.name.trim() === HW_NAME)
-      || course.categories.find((c) => /שיעורי בית|תרגילי בית|הגשות|ש״ב|ש"ב/.test(c.name));
+  const HW_RE = /שיעורי בית|תרגילי בית|הגשות|ש״ב|ש"ב/;
+  /** The course table named `name`, created when missing. The homework table also matches its older names. */
+  Mo.catFor = (course, name, opts = {}) => {
+    const n = String(name || HW_NAME).trim();
+    let cat = course.categories.find((c) => c.name.trim() === n)
+      || (n === HW_NAME ? course.categories.find((c) => HW_RE.test(c.name)) : null);
     if (!cat) {
-      cat = opts.newCategory ? opts.newCategory(HW_NAME) : { id: (opts.uid || fallbackUid)(), name: HW_NAME, items: [] };
+      cat = opts.newCategory ? opts.newCategory(n) : { id: (opts.uid || fallbackUid)(), name: n, items: [] };
       course.categories.push(cat);
     }
     return cat;
+  };
+  /** The course's homework category (created when missing). */
+  Mo.hwCategory = (course, opts = {}) => Mo.catFor(course, HW_NAME, opts);
+  /** The course table of a class; items synced before classes existed (or not classified) sit in the homework table. */
+  const tableOf = (st, cls) => {
+    if (!cls) return HW_NAME;
+    const c = Mo.classById(st, cls);
+    return c ? String(c.courseCat || c.name).trim() : null;
+  };
+  const inTableOf = (st, cat, cls) => {
+    const n = tableOf(st, cls);
+    return !!n && (cat.name.trim() === n || (n === HW_NAME && HW_RE.test(cat.name)));
+  };
+  /** An item you have not touched: open, no note, tag or star, title / date / link as Moodle gave them. */
+  const untouched = (item) => {
+    const s = item.source;
+    return item.status === 'todo' && !item.note && !(item.tags || []).length && !item.flag
+      && item.title === s.title && (item.due || '') === (s.due || '') && (!item.link || item.link === s.url);
   };
   const firstNum = (s) => { const m = String(s || '').match(/\d+/); return m ? Number(m[0]) : null; };
   /** A placeholder like "ש״ב 3" in the same category with the same number → suggest merging (never automatic). */
@@ -178,7 +307,7 @@
     return out;
   };
   function addToCourse(st, course, snap, opts) {
-    const cat = Mo.hwCategory(course, opts);
+    const cat = Mo.catFor(course, tableOf(st, snap.cls) || HW_NAME, opts);
     const item = newItem(snap, opts);
     cat.items.push(item);
     const ph = placeholderFor(cat, item);
@@ -186,23 +315,144 @@
     st.moodle.known[snap.uid] = true;
     return item;
   }
+  const eventEntry = (snap, courseId) => ({ uid: snap.uid, courseId, cls: snap.cls || '', title: snap.title, rawTitle: snap.rawTitle || '', due: snap.due || '', dueTime: snap.dueTime || '', url: snap.url || '', category: snap.category || '', gone: snap.gone || null });
+  /** Where a synced event lives now: { where: 'item', course, cat, item } | { where: 'event', entry } | { where: 'inbox', entry }. */
+  Mo.records = (st) => {
+    const mo = Mo.ensure(st);
+    const out = new Map();
+    Mo.syncedItems(st).forEach((rec, uid) => out.set(uid, Object.assign({ where: 'item' }, rec)));
+    mo.events.forEach((entry) => { if (!out.has(entry.uid)) out.set(entry.uid, { where: 'event', entry }); });
+    mo.inbox.forEach((entry) => { if (!out.has(entry.uid)) out.set(entry.uid, { where: 'inbox', entry }); });
+    return out;
+  };
+  const snapOf = (rec) => (rec.where === 'item' ? rec.item.source : rec.entry);
+  /** Is this class kept out of "הכל" (and out of the change list)? */
+  const quiet = (st, cls) => { const c = Mo.classById(st, cls); return !!c && !c.inAll; };
+
+  /**
+   * Put a synced event where its class says. Returns 'toCourse' | 'toEvents' | 'moved' | null (stayed).
+   *  - an item on a course page moves only if it still sits in its old class's table (else you moved it yourself);
+   *  - to a class without course items (תרגולים, הרצאות) it leaves the course page only if you never touched it;
+   *  - "לא מסווג" never takes an item off a course page.
+   */
+  function reclass(st, rec, cls, opts) {
+    const mo = st.moodle;
+    const def = Mo.classById(st, cls);
+    if (rec.where === 'inbox') { rec.entry.cls = cls; return null; }
+    if (rec.where === 'event') {
+      const e = rec.entry;
+      e.cls = cls;
+      const course = def && def.toCourse ? st.courses.find((c) => c.id === e.courseId) : null;
+      if (!course) return null;
+      const item = addToCourse(st, course, e, opts);
+      if (e.gone) item.source.gone = e.gone;
+      mo.events.splice(mo.events.indexOf(e), 1);
+      return 'toCourse';
+    }
+    const { course, cat, item } = rec;
+    const s = item.source;
+    const old = s.cls;
+    if (old === cls) return null;
+    s.cls = cls;
+    if (!def || !inTableOf(st, cat, old)) return null;
+    if (!def.toCourse) {
+      if (!untouched(item)) return null;
+      cat.items.splice(cat.items.indexOf(item), 1);
+      mo.events.push(eventEntry(s, course.id));
+      return 'toEvents';
+    }
+    const target = Mo.catFor(course, tableOf(st, cls), opts);
+    if (target === cat) return null;
+    cat.items.splice(cat.items.indexOf(item), 1);
+    target.items.push(item);
+    return 'moved';
+  }
+
+  /** Apply the current classes and your choices to every synced event. Returns how many changed place. */
+  Mo.reclassifyAll = (st, opts = {}) => {
+    let n = 0;
+    Mo.records(st).forEach((rec) => {
+      const snap = snapOf(rec);
+      if (reclass(st, rec, Mo.classify(st, snap).cls, opts)) n++;
+    });
+    return n;
+  };
+  /** Your choice of class for an event. It is remembered for its pattern (same Moodle course, same name up to
+   *  numbers), applied now to every event with that pattern and in every later sync. Returns how many events share it. */
+  Mo.setClass = (st, uid, cls, opts = {}) => {
+    const mo = Mo.ensure(st);
+    const rec = Mo.records(st).get(uid);
+    if (!rec || (cls !== '' && !Mo.classById(st, cls))) return 0;
+    const snap = snapOf(rec);
+    const key = Mo.patternKey(snap.category, snap.title);
+    mo.classMap[key] = cls;
+    let same = 0;
+    Mo.records(st).forEach((r) => { const x = snapOf(r); if (Mo.patternKey(x.category, x.title) === key) same++; });
+    Mo.reclassifyAll(st, opts);
+    return same;
+  };
+  /** Forget a remembered choice; the events go back to the automatic rules. */
+  Mo.clearClass = (st, key, opts = {}) => { delete Mo.ensure(st).classMap[key]; return Mo.reclassifyAll(st, opts); };
+  /** Your remembered choices, readable: [{ key, cls, course, pattern }]. */
+  Mo.classRules = (st) => Object.entries(Mo.ensure(st).classMap).map(([key, cls]) => {
+    const i = key.indexOf('|');
+    return { key, cls, course: key.slice(0, i), pattern: key.slice(i + 1) };
+  });
+  Mo.addClass = (st, name) => {
+    const mo = Mo.ensure(st);
+    const n = String(name || '').trim();
+    if (!n || n === Mo.UNCLASSIFIED || mo.classes.some((c) => c.name.trim() === n)) return null;
+    const c = { id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: n, courseCat: n, toCourse: true, inAll: true, keywords: [] };
+    mo.classes.push(c);
+    return c;
+  };
+  /** Delete a class: its remembered choices are dropped and its events are classified again (items stay where they are). */
+  Mo.removeClass = (st, id, opts = {}) => {
+    const mo = Mo.ensure(st);
+    mo.classes = mo.classes.filter((c) => c.id !== id);
+    Object.keys(mo.classMap).forEach((k) => { if (mo.classMap[k] === id) delete mo.classMap[k]; });
+    return Mo.reclassifyAll(st, opts);
+  };
+  Mo.resetClasses = (st, opts = {}) => {
+    const mo = Mo.ensure(st);
+    mo.classes = Mo.defaultClasses();
+    Object.keys(mo.classMap).forEach((k) => { if (mo.classMap[k] && !mo.classes.some((c) => c.id === mo.classMap[k])) delete mo.classMap[k]; });
+    return Mo.reclassifyAll(st, opts);
+  };
+  /** Keywords typed as text: split on commas or new lines, trimmed, no duplicates. */
+  Mo.parseKeywords = (text) => [...new Set(String(text || '').split(/[,\n،]+/).map((x) => x.trim()).filter(Boolean))];
 
   /**
    * Bring the events into the state. Mutates `st`; returns counts:
-   * { total, added, updated, restored, gone, unassigned, unchanged, skippedOpen, ignored, deletedByYou, invalid }.
+   * { total, added, listed, unclassified, updated, restored, gone, unassigned, unchanged, reclassified, skippedOpen,
+   *   ignored, deletedByYou, invalid }. added = new items on course pages; listed = new events kept only on
+   * "המודל שלי" (classes without course items, or not classified yet).
    * opts: { today: 'YYYY-MM-DD', now: ISO string, newItem(title), newCategory(name), uid() }
    */
   Mo.merge = (st, events, opts = {}) => {
     const mo = Mo.ensure(st);
     const today = opts.today || new Date().toISOString().slice(0, 10);
     const now = opts.now || new Date().toISOString();
-    const r = { total: events.length, added: 0, updated: 0, restored: 0, gone: 0, unassigned: 0, unchanged: 0, skippedOpen: 0, ignored: 0, deletedByYou: 0, invalid: 0 };
+    const r = { total: events.length, added: 0, listed: 0, unclassified: 0, updated: 0, restored: 0, gone: 0, unassigned: 0, unchanged: 0, reclassified: 0, skippedOpen: 0, ignored: 0, deletedByYou: 0, invalid: 0 };
     const changes = [];
-    const note = (kind, snap, extra = {}) => changes.push(Object.assign({ kind, uid: snap.uid, title: snap.title, due: snap.due || '', dueTime: snap.dueTime || '' }, extra));
+    const note = (kind, snap, extra = {}) => {
+      if (quiet(st, snap.cls)) return; // תרגולים / הרצאות: no "new" or "changed" alerts
+      changes.push(Object.assign({ kind, uid: snap.uid, title: snap.title, due: snap.due || '', dueTime: snap.dueTime || '', cls: snap.cls || '' }, extra));
+    };
     const synced = Mo.syncedItems(st);
+    const evMap = new Map(mo.events.map((e) => [e.uid, e]));
     const seen = new Set();
     let lastDue = '';
     const inbox = new Map(mo.inbox.map((x) => [x.uid, x]));
+    // what Moodle says now vs what was stored: title / date / time. A title that differs only because the title
+    // cleaning improved (same raw Moodle text) is updated quietly.
+    const compare = (s, snap, item) => {
+      if (s.rawTitle && s.rawTitle === snap.rawTitle && s.title !== snap.title) {
+        if (item && item.title === s.title) item.title = snap.title;
+        s.title = snap.title;
+      }
+      return s.title !== snap.title || (s.due || '') !== (snap.due || '') || (s.dueTime || '') !== (snap.dueTime || '');
+    };
 
     events.forEach((ev) => {
       if (!ev.uid) { r.invalid++; return; }
@@ -212,14 +462,14 @@
       const snap = Mo.snapshot(ev);
       if (snap.due && snap.due > lastDue) lastDue = snap.due;
       if (mo.ignored[ev.uid]) { r.ignored++; return; }
+      snap.cls = Mo.classify(st, snap).cls;
 
       const hit = synced.get(ev.uid);
       if (hit) {
         const { item } = hit;
         const s = item.source;
         if (s.gone) { s.gone = null; r.restored++; note('restored', snap, { course: hit.course.id }); }
-        const diff = s.title !== snap.title || s.due !== snap.due || (s.dueTime || '') !== (snap.dueTime || '');
-        if (diff) {
+        if (compare(s, snap, item)) {
           note('changed', snap, { course: hit.course.id, prevTitle: s.title, prevDue: s.due || '', prevTime: s.dueTime || '' });
           const prev = s.changed || { prevTitle: s.title, prevDue: s.due, prevTime: s.dueTime || '' };
           if (item.title === s.title) item.title = snap.title; // only where you did not rename it
@@ -229,14 +479,32 @@
         } else if (!s.gone) r.unchanged++;
         if (s.url !== snap.url) { if (!item.link || item.link === s.url) item.link = snap.url; }
         Object.assign(s, { title: snap.title, rawTitle: snap.rawTitle, due: snap.due, dueTime: snap.dueTime, url: snap.url, category: snap.category });
+        if (reclass(st, Object.assign({ where: 'item' }, hit), snap.cls, opts)) r.reclassified++;
+        return;
+      }
+      const e = evMap.get(ev.uid);
+      if (e) {
+        if (e.gone) { e.gone = null; r.restored++; note('restored', snap, { course: e.courseId }); }
+        if (compare(e, snap, null)) {
+          note('changed', snap, { course: e.courseId, prevTitle: e.title, prevDue: e.due || '', prevTime: e.dueTime || '' });
+          r.updated++;
+        } else r.unchanged++;
+        Object.assign(e, { title: snap.title, rawTitle: snap.rawTitle, due: snap.due, dueTime: snap.dueTime, url: snap.url, category: snap.category });
+        if (reclass(st, { where: 'event', entry: e }, snap.cls, opts)) r.reclassified++;
         return;
       }
       if (mo.known[ev.uid]) { r.deletedByYou++; return; }
       const course = Mo.matchCourse(st, ev);
       if (course) {
-        addToCourse(st, course, snap, opts);
         inbox.delete(ev.uid);
-        r.added++;
+        const def = Mo.classById(st, snap.cls);
+        if (def && def.toCourse) { addToCourse(st, course, snap, opts); r.added++; } else {
+          const entry = eventEntry(snap, course.id);
+          mo.events.push(entry);
+          evMap.set(entry.uid, entry);
+          r.listed++;
+        }
+        if (!snap.cls) r.unclassified++;
         note('new', snap, { course: course.id });
       } else {
         if (!inbox.has(ev.uid)) note('new', snap, { unassigned: true, category: snap.category || '' });
@@ -246,11 +514,19 @@
     });
 
     // gone from the feed: mark (never delete) — only deadlines from today up to the last date this feed covers
+    const goneIn = (s) => !!s.due && !!lastDue && s.due >= today && s.due <= lastDue;
     synced.forEach(({ item, course }, uid) => {
       const s = item.source;
-      if (seen.has(uid) || s.gone || !s.due || !lastDue) return;
-      if (s.due >= today && s.due <= lastDue) { s.gone = { at: now }; r.gone++; note('gone', Object.assign({ uid }, s), { course: course.id }); }
+      if (seen.has(uid) || s.gone || !goneIn(s)) return;
+      s.gone = { at: now }; r.gone++; note('gone', Object.assign({ uid }, s), { course: course.id });
     });
+    evMap.forEach((e, uid) => {
+      if (seen.has(uid) || e.gone || !goneIn(e) || !mo.events.includes(e)) return;
+      e.gone = { at: now }; r.gone++; note('gone', e, { course: e.courseId });
+    });
+    // sessions (not on a course page) that aged out of the feed more than 120 days ago are dropped from the list
+    const cutoff = new Date(Date.parse(`${today}T00:00:00Z`) - 120 * 864e5).toISOString().slice(0, 10);
+    mo.events = mo.events.filter((x) => seen.has(x.uid) || !x.due || x.due >= cutoff);
     // unassigned events that left the feed are dropped from the list (nothing of yours is lost)
     mo.inbox = [...inbox.values()].filter((x) => seen.has(x.uid)).sort((a, b) => String(a.due).localeCompare(String(b.due)));
     mo.last = Object.assign({ at: now, source: opts.source || 'file' }, r);
@@ -265,7 +541,7 @@
   };
 
   /** Assign an unassigned event to a course. remember=true: every event of the same Moodle course goes there too,
-   *  now and in later syncs. Returns how many items were created. */
+   *  now and in later syncs. Returns how many events were placed. */
   Mo.assign = (st, uid, courseId, remember, opts = {}) => {
     const mo = Mo.ensure(st);
     const entry = mo.inbox.find((x) => x.uid === uid);
@@ -274,7 +550,11 @@
     const key = entry.category;
     if (remember && key) mo.map[key] = courseId; else mo.uidMap[uid] = courseId;
     const take = mo.inbox.filter((x) => x.uid === uid || (remember && key && x.category === key));
-    take.forEach((x) => addToCourse(st, course, x, opts));
+    take.forEach((x) => {
+      x.cls = Mo.classify(st, x).cls;
+      const def = Mo.classById(st, x.cls);
+      if (def && def.toCourse) addToCourse(st, course, x, opts); else mo.events.push(eventEntry(x, course.id));
+    });
     const ids = new Set(take.map((x) => x.uid));
     mo.inbox = mo.inbox.filter((x) => !ids.has(x.uid));
     return take.length;
@@ -284,6 +564,7 @@
     const mo = Mo.ensure(st);
     mo.ignored[uid] = true;
     mo.inbox = mo.inbox.filter((x) => x.uid !== uid);
+    mo.events = mo.events.filter((x) => x.uid !== uid);
   };
   /** Forget a remembered Moodle-course → course choice. */
   Mo.unmap = (st, key) => { delete Mo.ensure(st).map[key]; };
@@ -343,6 +624,9 @@
   Mo.summary = (r) => {
     const parts = [];
     if (r.added) parts.push(`${r.added} חדשות`);
+    if (r.listed) parts.push(`${r.listed} חדשות בהמודל שלי`);
+    if (r.unclassified) parts.push(`${r.unclassified} מחכות לסיווג`);
+    if (r.reclassified) parts.push(`${r.reclassified} סווגו מחדש`);
     if (r.updated) parts.push(`${r.updated} עודכנו`);
     if (r.restored) parts.push(`${r.restored} חזרו למודל`);
     if (r.gone) parts.push(`${r.gone} לא מופיעות יותר`);

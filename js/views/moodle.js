@@ -25,11 +25,21 @@
   const mergeOpts = (source) => ({ newItem: (t) => M.newItem(t), newCategory: (n) => M.newCategory(n), uid: u.uid, today: u.today(), source });
 
   /* ================= tags on a course row ================= */
+  let freshCache = { list: null, n: -1, set: new Set() };
+  /** UIDs of "new" entries in the change list you have not marked as seen (cached per change list). */
+  const freshUids = () => {
+    const list = mo().changes || [];
+    const n = list.filter((c) => !c.seen).length;
+    if (freshCache.list !== list || freshCache.n !== n) freshCache = { list, n, set: new Set(list.filter((c) => !c.seen && c.kind === 'new').map((c) => c.uid)) };
+    return freshCache.set;
+  };
   V.badges = (it) => {
     const s = it.source;
     if (!s || s.kind !== 'moodle') return '';
     const time = s.dueTime ? ` · ${s.dueTime}` : '';
-    const out = [`<span class="tag moodle-tag" title="מטלה ממודל${s.dueTime ? ` · להגשה עד ${s.dueTime === '24:00' ? '24:00 (חצות)' : s.dueTime}` : ''}${s.category ? ` · ${esc(s.category)}` : ''}">ממודל${time}</span>`];
+    const out = [];
+    if (freshUids().has(s.uid)) out.push('<span class="pill mm-new" title="נוסף בסנכרון האחרון ממודל">חדש</span>');
+    out.push(`<span class="tag moodle-tag" title="מטלה ממודל${s.dueTime ? ` · להגשה עד ${s.dueTime === '24:00' ? '24:00 (חצות)' : s.dueTime}` : ''}${s.category ? ` · ${esc(s.category)}` : ''}">ממודל${time}</span>`);
     if (s.changed) out.push(`<button class="tag moodle-alert" data-action="moodle-changed" title="המועד או השם השתנו במודל — לחץ לפרטים">עודכן ממודל</button>`);
     if (s.gone) out.push(`<button class="tag moodle-alert" data-action="moodle-gone" title="האירוע כבר לא מופיע בלוח של מודל — לחץ להחלטה">לא מופיע יותר במודל</button>`);
     if (s.mergeWith) {
@@ -81,6 +91,92 @@
     }
   };
 
+  /* ================= categories editor (in the settings card) ================= */
+  let classesOpen = false;
+  function classesHTML() {
+    const m = mo();
+    const rows = m.classes.map((c) => `<div class="mm-cls-row" data-cls="${esc(c.id)}">
+        <div class="mm-cls-head">
+          <input class="input mm-cls-name" data-f="name" value="${esc(c.name)}" aria-label="שם הקטגוריה" maxlength="40">
+          <button class="btn btn-small btn-ghost" data-action="moodle-cls-del" title="מחק את הקטגוריה">${icon.trash}</button>
+        </div>
+        <label class="small">מילות מפתח (מופרדות בפסיק, עברית או אנגלית)
+          <textarea class="input" data-f="keywords" rows="2" dir="auto">${esc((c.keywords || []).join(', '))}</textarea></label>
+        <div class="mm-cls-opts small">
+          <label><input type="checkbox" data-f="toCourse"${c.toCourse ? ' checked' : ''}> להוסיף לדף הקורס, לטבלה</label>
+          <input class="input input-sm" data-f="courseCat" value="${esc(c.courseCat || c.name)}" aria-label="שם הטבלה בדף הקורס" maxlength="40">
+          <label><input type="checkbox" data-f="inAll"${c.inAll ? ' checked' : ''}> להציג ב„הכל”</label>
+          <label><input type="checkbox" data-f="hidden"${c.hidden ? ' checked' : ''}> להסתיר לגמרי</label>
+        </div>
+      </div>`).join('');
+    const rules = Mo.classRules(S.state);
+    const rulesHTML = rules.map((r) => `<li><span dir="auto">${esc(r.pattern.replace(/#/g, 'N'))}</span> <span class="muted">· ${r.course ? `<span dir="auto">${esc(r.course)}</span>` : 'בלי קורס'}</span> ← <b>${esc(Mo.className(S.state, r.cls))}</b>
+      <button class="btn btn-small btn-ghost" data-action="moodle-rule-forget" data-key="${esc(r.key)}">שכח</button></li>`).join('');
+    return `<details class="mm-classes"${classesOpen ? ' open' : ''} id="moodle-classes"><summary><b>קטגוריות וכללי סיווג</b> <span class="muted small">(${m.classes.length} קטגוריות · ${rules.length} בחירות שלך)</span></summary>
+      <p class="small muted">כל אירוע ממודל מסווג לפי מילות המפתח בשמו. אירוע שמתאים לשתי קטגוריות, או לאף אחת, <b>לא מנוחש</b> — הוא נכנס ל„לא מסווג” ואתה בוחר.
+        בחירה שלך נשמרת לפי הקורס ושם האירוע (בלי מספרים), חלה גם על אירועים דומים, וגוברת תמיד על הכללים. כשאין מילת מפתח, אירוע שמודל עצמו מנסח „יש להגיש את …” נחשב מטלה.</p>
+      <div class="mm-cls-list">${rows}</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-action="moodle-cls-save">שמור קטגוריות</button>
+        <input class="input input-sm" data-f="newname" placeholder="שם קטגוריה חדשה" aria-label="שם קטגוריה חדשה" maxlength="40">
+        <button class="btn" data-action="moodle-cls-add">${icon.plus || '+'} הוסף</button>
+        <button class="btn btn-ghost" data-action="moodle-cls-reset">החזר ברירות מחדל</button>
+      </div>
+      ${rules.length ? `<h4>הבחירות שלך</h4><ul class="moodle-maps small">${rulesHTML}</ul>` : '<p class="small muted">עוד לא בחרת קטגוריה לאף אירוע. בוחרים בדף „המודל שלי”, בתיבה שליד כל אירוע.</p>'}
+    </details>`;
+  }
+  /** Read the editor's fields; null (with a toast) when something is wrong. */
+  function readClasses(box) {
+    const m = mo();
+    const out = [];
+    const names = new Set();
+    for (const row of box.querySelectorAll('.mm-cls-row')) {
+      const old = m.classes.find((c) => c.id === row.dataset.cls);
+      if (!old) continue;
+      const f = (k) => row.querySelector(`[data-f="${k}"]`);
+      const name = f('name').value.trim();
+      if (!name || name === Mo.UNCLASSIFIED) { ui.toast('לכל קטגוריה צריך שם (ולא „לא מסווג”)', { error: true }); f('name').focus(); return null; }
+      if (names.has(name)) { ui.toast(`השם „${name}” מופיע פעמיים`, { error: true }); f('name').focus(); return null; }
+      names.add(name);
+      out.push(Object.assign({}, old, {
+        name, keywords: Mo.parseKeywords(f('keywords').value), courseCat: f('courseCat').value.trim() || name,
+        toCourse: f('toCourse').checked, inAll: f('inAll').checked, hidden: f('hidden').checked,
+      }));
+    }
+    return out;
+  }
+  async function classAction(act, a) {
+    classesOpen = true;
+    const box = a.closest('.mm-classes');
+    const done = (n, what) => ui.toast(`${what}${n ? ` · ${n} אירועים הועברו למקום החדש` : ''}`, { action: { label: 'בטל', fn: S.undo } });
+    if (act === 'moodle-cls-save') {
+      const list = readClasses(box);
+      if (!list) return;
+      const n = S.commit('עדכון קטגוריות ממודל', (st) => { Mo.ensure(st).classes = list; return Mo.reclassifyAll(st, mergeOpts()); });
+      done(n, 'הקטגוריות נשמרו');
+    } else if (act === 'moodle-cls-add') {
+      const inp = box.querySelector('[data-f="newname"]');
+      const name = inp.value.trim();
+      if (!name) { inp.focus(); return; }
+      const c = S.commit('קטגוריה חדשה', (st) => Mo.addClass(st, name));
+      if (!c) ui.toast('כבר יש קטגוריה בשם הזה', { error: true });
+      else ui.toast(`נוספה „${name}” — הוסף לה מילות מפתח ושמור`);
+    } else if (act === 'moodle-cls-del') {
+      const id = a.closest('.mm-cls-row').dataset.cls;
+      const c = Mo.classById(S.state, id);
+      if (!c || !(await ui.confirm(`למחוק את „${c.name}”? האירועים שלה יסווגו מחדש לפי הכללים (או „לא מסווג”). פריטים בדף הקורס נשארים במקומם.`, 'מחק', true))) return;
+      const n = S.commit('מחיקת קטגוריה', (st) => Mo.removeClass(st, id, mergeOpts()));
+      done(n, `„${c.name}” נמחקה`);
+    } else if (act === 'moodle-cls-reset') {
+      if (!(await ui.confirm('להחזיר את הקטגוריות ומילות המפתח לברירת המחדל? הבחירות הידניות שלך נשמרות (חוץ מבחירות בקטגוריות שלא יהיו קיימות).', 'החזר', false))) return;
+      const n = S.commit('ברירות מחדל לקטגוריות', (st) => Mo.resetClasses(st, mergeOpts()));
+      done(n, 'הקטגוריות חזרו לברירת המחדל');
+    } else if (act === 'moodle-rule-forget') {
+      const n = S.commit('שכחת סיווג ידני', (st) => Mo.clearClass(st, a.dataset.key, mergeOpts()));
+      done(n, 'הבחירה נשכחה — האירועים חוזרים לכללים האוטומטיים');
+    }
+  }
+
   /* ================= settings card ================= */
   V.section = () => {
     const m = mo();
@@ -117,12 +213,13 @@
         <button class="btn btn-primary" data-action="moodle-import">${icon.upload} ייבוא קובץ ‎.ics‎</button>
       </div>
       <p class="small">${last ? `ייבוא אחרון: <b>${esc(fmtWhen(last.at))}</b> — ${esc(Mo.summary(last))}` : 'עוד לא יובאו מטלות.'}</p>
-      <p class="small muted">כל מטלה נכנסת לקטגוריה "שיעורי בית" של הקורס עם התג <span class="tag moodle-tag">ממודל</span>. ייבוא חוזר לא יוצר כפילויות;
+      <p class="small muted">כל אירוע מסווג לקטגוריה (מטלות, תרגילי הכנה, בחנים, מעבדות…) ונכנס לטבלה המתאימה בדף הקורס עם התג <span class="tag moodle-tag">ממודל</span>; תרגולים והרצאות מוצגים רק ב„המודל שלי”. ייבוא חוזר לא יוצר כפילויות;
         שינוי במודל מסומן "עודכן ממודל", ומטלה שנעלמה מסומנת ולא נמחקת. הסימון V, ההערות, התגיות והכוכב שלך לא נדרסים לעולם.</p>
       ${m.inbox.length ? `<h3>לא משויך (${m.inbox.length})</h3>
         <p class="small muted">לא מצאתי לאיזה קורס שייכות המטלות האלה. בחר קורס — הבחירה נשמרת לייבואים הבאים.</p>
         <div class="moodle-inbox">${inbox}</div>` : ''}
       ${maps ? `<details class="small"><summary>שיוכים שמורים (${Object.keys(m.map).length})</summary><ul class="moodle-maps">${maps}</ul></details>` : ''}
+      ${classesHTML()}
       ${ignoredN ? `<p class="small muted">${ignoredN} אירועים מוסתרים לתמיד. <button class="btn btn-small btn-ghost" data-action="moodle-unignore">החזר אותם בייבוא הבא</button></p>` : ''}
     </section>`;
   };
@@ -430,6 +527,7 @@
       }
       case 'moodle-ignore': S.commit('הסתרת אירוע ממודל', (st) => Mo.ignore(st, uid)); break;
       case 'moodle-unmap': S.commit('שכחת שיוך', (st) => Mo.unmap(st, a.dataset.key)); break;
+      case 'moodle-cls-save': case 'moodle-cls-add': case 'moodle-cls-del': case 'moodle-cls-reset': case 'moodle-rule-forget': classAction(a.dataset.action, a); break;
       case 'moodle-unignore': S.commit('החזרת אירועים מוסתרים', (st) => { Mo.ensure(st).ignored = {}; }); break;
       default: break;
     }
@@ -465,7 +563,10 @@
     ui.modal({
       title: 'ייבוא ממודל',
       body: `<ul class="moodle-result">
-          ${line(r.added, 'מטלות חדשות נוספו לקורסים')}
+          ${line(r.added, 'פריטים חדשים נוספו לדפי הקורסים')}
+          ${line(r.listed, 'אירועים חדשים נוספו ל„המודל שלי” בלבד (תרגולים, הרצאות או לא מסווגים)')}
+          ${line(r.unclassified, 'לא סווגו בביטחון — מחכים לבחירה שלך ב„המודל שלי”')}
+          ${line(r.reclassified, 'סווגו מחדש והועברו לטבלה המתאימה')}
           ${line(r.updated, 'עודכנו (מסומנות "עודכן ממודל")')}
           ${line(r.restored, 'חזרו להופיע במודל')}
           ${line(r.gone, 'כבר לא מופיעות במודל (מסומנות, לא נמחקו)')}
@@ -485,7 +586,8 @@
   };
 
   /* ================= "המודל שלי" page ================= */
-  const page = { course: '', showDone: false };
+  const page = { course: '', showDone: false, tab: 'all' };
+  const TAB_NONE = '_none';
   const isDone = (it) => it.status === 'done';
   const timeAgo = (iso) => {
     const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -494,30 +596,67 @@
     const h = Math.round(min / 60);
     return h < 24 ? `לפני ${h} שע׳` : `לפני ${Math.round(h / 24)} ימים`;
   };
-  /** Urgency bucket of an open item: overdue · today/tomorrow · this week · later · no date. */
-  const bucketOf = (it) => {
-    if (!it.due) return 'nodate';
-    const n = u.daysUntil(it.due);
+  /** Urgency bucket of an open row: overdue · today/tomorrow · this week · later · no date. */
+  const bucketOf = (r) => {
+    if (!r.due) return 'nodate';
+    const n = u.daysUntil(r.due);
     return n < 0 ? 'overdue' : n <= 1 ? 'soon' : n <= 7 ? 'week' : 'later';
   };
   const BUCKETS = [
     ['overdue', '🔴 באיחור'], ['soon', '⏰ היום ומחר'], ['week', '📅 בשבוע הקרוב'], ['later', 'בהמשך'], ['nodate', 'בלי תאריך'],
   ];
-  const sortKey = (it) => `${it.due || '9999-99-99'} ${(it.source && it.source.dueTime) || '99:99'}`;
+  const sortKey = (r) => `${r.due || '9999-99-99'} ${r.time || '99:99'}`;
 
-  function pageRow({ item, course }) {
-    const s = item.source || {};
-    const done = isDone(item);
-    const n = item.due ? u.daysUntil(item.due) : null;
-    const cls = done ? 'done' : n == null ? '' : n < 0 ? 'overdue' : n <= 1 ? 'soon' : '';
-    const when = item.due ? `${u.fmtDateFull(item.due)}${s.dueTime ? ` · ${s.dueTime}` : ''}` : 'בלי תאריך';
-    return `<li class="${cls}" style="--c:${esc(course.color)}" data-id="${esc(item.id)}">
-      <button class="check check-sm" role="checkbox" aria-checked="${done}" data-action="mm-toggle" aria-label="${done ? 'בטל סימון' : 'סמן שהגשתי'}: ${esc(item.title)}">${icon.check}</button>
-      <a href="#/course/${course.id}?item=${item.id}" class="u-title"><span dir="auto">${esc(item.title)}</span>
-        <span class="muted small">${ui.courseDot(course)} ${esc(course.name)} · ${esc(when)}${done ? ' · <b>סימנתי שהגשתי</b>' : ''}</span>
-        <span class="mm-tags">${V.badges(item).replace(/<span class="tag moodle-tag"[^>]*>[^<]*<\/span>/, '')}</span></a>
-      <span class="u-when">${done ? '✓' : item.due ? u.relDays(item.due) : ''}</span>
-      ${item.link ? `<a class="icon-btn" href="${esc(item.link)}" target="_blank" rel="noopener noreferrer" title="פתח במודל" aria-label="פתח במודל">${icon.link}</a>` : ''}
+  /** Every synced event with a course, as page rows. Items on a course page have a V; sessions (תרגולים, הרצאות)
+   *  are calendar entries — no V, and once they are past they count as done. Unclassified events stay open. */
+  function collect() {
+    const st = S.state;
+    const fresh = freshUids();
+    const out = [];
+    Mo.records(st).forEach((rec, uid) => {
+      if (rec.where === 'inbox') return;
+      if (rec.where === 'item') {
+        if (rec.course.archived) return;
+        const s = rec.item.source;
+        const cls = s.cls !== undefined ? s.cls : Mo.classify(st, s).cls;
+        out.push({ uid, kind: 'item', item: rec.item, course: rec.course, cls, src: s, title: rec.item.title, due: rec.item.due, time: s.dueTime, link: rec.item.link, done: isDone(rec.item), isNew: fresh.has(uid) });
+        return;
+      }
+      const e = rec.entry;
+      const course = S.course(e.courseId);
+      if (!course || course.archived) return;
+      const session = !!Mo.classById(st, e.cls);
+      out.push({ uid, kind: 'event', entry: e, course, cls: e.cls, src: e, title: e.title, due: e.due, time: e.dueTime, link: e.url, session, done: session && !!e.due && e.due < u.today(), isNew: fresh.has(uid) });
+    });
+    return out;
+  }
+
+  const clsOptions = (sel) => [...mo().classes.map((c) => [c.id, c.name]), ['', Mo.UNCLASSIFIED]]
+    .map(([id, n]) => `<option value="${esc(id)}"${id === (sel || '') ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  const isManual = (src) => Object.prototype.hasOwnProperty.call(mo().classMap, Mo.patternKey(src.category, src.title));
+
+  function pageRow(r) {
+    const { course } = r;
+    const n = r.due ? u.daysUntil(r.due) : null;
+    const cl = r.done ? 'done' : n == null ? '' : n < 0 && !r.session ? 'overdue' : n >= 0 && n <= 1 ? 'soon' : '';
+    const when = r.due ? `${u.fmtDateFull(r.due)}${r.time ? ` · ${r.time}` : ''}` : 'בלי תאריך';
+    const mark = r.kind === 'item'
+      ? `<button class="check check-sm" role="checkbox" aria-checked="${r.done}" data-action="mm-toggle" aria-label="${r.done ? 'בטל סימון' : 'סמן שהגשתי'}: ${esc(r.title)}">${icon.check}</button>`
+      : `<span class="mm-dot${r.session ? '' : ' mm-dot-q'}" title="${r.session ? 'אירוע בלוח של מודל — אין מה לסמן' : 'לא סווג — בחר קטגוריה'}">${r.session ? '•' : '?'}</span>`;
+    const href = r.kind === 'item' ? `#/course/${course.id}?item=${r.item.id}` : `#/course/${course.id}`;
+    const tags = [
+      r.isNew && r.kind === 'event' && '<span class="pill mm-new">חדש</span>', // items get it from V.badges
+      isManual(r.src) && '<span class="tag" title="סיווג שבחרת — נשמר גם לאירועים דומים ולא נדרס בסנכרון">✋ ידני</span>',
+      r.kind === 'item' ? V.badges(r.item).replace(/<span class="tag moodle-tag"[^>]*>[^<]*<\/span>/, '') : (r.entry.gone ? '<span class="tag moodle-alert">לא מופיע יותר במודל</span>' : ''),
+    ].filter(Boolean).join('');
+    return `<li class="${cl}" style="--c:${esc(course.color)}" data-id="${r.kind === 'item' ? esc(r.item.id) : ''}" data-uid="${esc(r.uid)}">
+      ${mark}
+      <a href="${href}" class="u-title"><span dir="auto">${esc(r.title)}</span>
+        <span class="muted small">${ui.courseDot(course)} ${esc(course.name)} · ${esc(when)}${r.done && r.kind === 'item' ? ' · <b>סימנתי שהגשתי</b>' : ''}</span>
+        <span class="mm-tags">${tags}</span></a>
+      <select class="chip-select mm-cls" data-mm-cls aria-label="קטגוריה של ${esc(r.title)}" title="קטגוריה (הבחירה נשמרת גם לאירועים דומים)">${clsOptions(r.cls)}</select>
+      <span class="u-when">${r.done ? (r.kind === 'item' ? '✓' : '') : r.due ? u.relDays(r.due) : ''}</span>
+      ${r.link ? `<a class="icon-btn" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer" title="פתח במודל" aria-label="פתח במודל">${icon.link}</a>` : ''}
     </li>`;
   }
 
@@ -525,17 +664,28 @@
     const m = mo();
     const cloud = C();
     const connected = cloud && cloud.enabled && cloud.signedIn() && hasFlag();
-    const all = [...Mo.syncedItems(S.state).values()].filter(({ course }) => !course.archived);
+    const all = collect();
     const courses = [...new Map(all.map(({ course }) => [course.id, course])).values()].sort((a, b) => a.name.localeCompare(b.name, 'he'));
     if (page.course && !courses.some((c) => c.id === page.course)) page.course = '';
-    const shown = all.filter(({ course }) => !page.course || course.id === page.course);
-    const open = shown.filter(({ item }) => !isDone(item)).sort((a, b) => sortKey(a.item).localeCompare(sortKey(b.item)));
-    const done = shown.filter(({ item }) => isDone(item)).sort((a, b) => sortKey(b.item).localeCompare(sortKey(a.item)));
-    const overdueN = open.filter(({ item }) => bucketOf(item) === 'overdue').length;
+    const hidden = new Set(m.classes.filter((c) => c.hidden).map((c) => c.id));
+    if (page.tab !== 'all' && page.tab !== TAB_NONE && (!Mo.classById(S.state, page.tab) || hidden.has(page.tab))) page.tab = 'all';
+    const inTab = (r, tab) => {
+      if (tab === TAB_NONE) return !r.cls;
+      if (tab !== 'all') return r.cls === tab;
+      const c = Mo.classById(S.state, r.cls);
+      return !c || (c.inAll && !c.hidden);
+    };
+    const byCourse = all.filter(({ course }) => !page.course || course.id === page.course);
+    const openIn = (tab) => byCourse.filter((r) => !r.done && inTab(r, tab)).length;
+    const shown = byCourse.filter((r) => inTab(r, page.tab));
+    const open = shown.filter((r) => !r.done).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    const done = shown.filter((r) => r.done).sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+    const overdueN = open.filter((r) => !r.session && bucketOf(r) === 'overdue').length;
+    const noneN = openIn(TAB_NONE);
     if (connected && feed.state === 'unknown') setTimeout(loadFeed, 0);
     const last = m.last;
     const lastAt = [m.serverAt, m.lastLink, last && last.at].filter(Boolean).sort().pop();
-    const counts = last ? [last.added && `<b>${last.added}</b> חדשות`, last.updated && `<b>${last.updated}</b> עודכנו`, last.gone && `${last.gone} לא מופיעות יותר`].filter(Boolean).join(' · ') : '';
+    const counts = last ? [last.added && `<b>${last.added}</b> חדשות`, last.listed && `${last.listed} אירועים חדשים`, last.updated && `<b>${last.updated}</b> עודכנו`, last.gone && `${last.gone} לא מופיעות יותר`].filter(Boolean).join(' · ') : '';
     const status = `<p class="small mm-status">${lastAt ? `עודכן לאחרונה: <b>${esc(fmtWhen(lastAt))}</b> <span class="muted">(${esc(timeAgo(lastAt))}${last && last.source === 'file' && !m.lastLink ? ', מקובץ' : ''})</span>${counts ? ` · ברענון האחרון: ${counts}` : last ? ' · ברענון האחרון: אין שינויים' : ''}` : 'עוד לא עודכן ממודל.'}
       ${busy === 'auto' ? ' · <span class="muted">מרענן ברקע…</span>' : ''}
       ${connected ? `<br><span class="muted">רענון אוטומטי בשרת כל שעתיים${m.serverCheckedAt ? ` · בדיקה אחרונה ${esc(timeAgo(m.serverCheckedAt))}` : ' · עוד לא פעיל (צריך להריץ את supabase/moodle.sql)'}</span>` : ''}</p>`;
@@ -544,12 +694,19 @@
       ? 'עוד לא חיברת קישור לוח שנה של מודל. <a href="#/settings" data-action="mm-settings">לחיבור בהגדרות</a> — או ייבא קובץ ‎.ics‎ ידנית.'
       : 'רענון אוטומטי דורש חשבון באתר וקישור לוח שנה של מודל (בהגדרות). בלי זה — ייבוא קובץ ‎.ics‎ ידני עובד תמיד.'}</p>
       <button class="btn" data-action="mm-import">${icon.upload} ייבוא קובץ ‎.ics‎</button></div>`;
+    const tabs = [['all', 'הכל'], ...m.classes.filter((c) => !c.hidden).map((c) => [c.id, c.name]), ...(noneN || page.tab === TAB_NONE ? [[TAB_NONE, Mo.UNCLASSIFIED]] : [])];
+    const tabsHTML = `<div class="mm-tabs" role="tablist" aria-label="קטגוריות">${tabs.map(([id, name]) => {
+      const n = openIn(id);
+      return `<button role="tab" class="mm-tab${id === page.tab ? ' active' : ''}${id === TAB_NONE ? ' mm-tab-none' : ''}" aria-selected="${id === page.tab}" data-action="mm-tab" data-tab="${esc(id)}">${esc(name)}${n ? ` <span class="mm-count">${n}</span>` : ''}</button>`;
+    }).join('')}</div>`;
     const groups = BUCKETS.map(([k, label]) => {
-      const rows = open.filter(({ item }) => bucketOf(item) === k);
+      const rows = open.filter((r) => bucketOf(r) === k && !(k === 'overdue' && r.session));
       return rows.length ? `<section class="card mm-group mm-${k}"><h2>${label} <span class="muted small">(${rows.length})</span></h2><ul class="urgent-list mm-list">${rows.map(pageRow).join('')}</ul></section>` : '';
     }).join('');
-    const doneBox = page.showDone && done.length ? `<section class="card mm-group mm-done"><h2>✓ סימנתי שהגשתי <span class="muted small">(${done.length})</span></h2>
-      <p class="small muted">הסימון הוא שלך — לוח השנה של מודל לא מוסר סטטוס הגשה.</p><ul class="urgent-list mm-list">${done.map(pageRow).join('')}</ul></section>` : '';
+    const doneBox = page.showDone && done.length ? `<section class="card mm-group mm-done"><h2>✓ הוגש או עבר <span class="muted small">(${done.length})</span></h2>
+      <p class="small muted">הסימון V הוא שלך — לוח השנה של מודל לא מוסר סטטוס הגשה. תרגולים והרצאות שעברו מופיעים כאן.</p><ul class="urgent-list mm-list">${done.map(pageRow).join('')}</ul></section>` : '';
+    const tabName = page.tab === 'all' ? '' : page.tab === TAB_NONE ? Mo.UNCLASSIFIED : Mo.className(S.state, page.tab);
+    const empty = all.length ? ui.empty(`אין פריטים פתוחים${tabName ? ` ב„${esc(tabName)}”` : ''}${page.course ? ' בקורס הזה' : ''}. 🎉`) : ui.empty('עוד אין מטלות ממודל.');
     root.innerHTML = `<div class="mymoodle">
       <div class="section-head">
         <h1>המודל שלי</h1>
@@ -561,23 +718,38 @@
       ${status}${err}${how}${connected ? V.rangeHTML() : ''}
       ${changesHTML()}
       ${m.inbox.length ? `<p class="small moodle-error">${m.inbox.length} מטלות לא שויכו לקורס. <button class="btn btn-small" data-action="mm-inbox">לשיוך</button></p>` : ''}
+      ${noneN && page.tab !== TAB_NONE ? `<p class="small mm-unclassified">❔ ${noneN === 1 ? 'אירוע אחד לא סווג' : `${noneN} אירועים לא סווגו`} בביטחון — בחר קטגוריה, והבחירה תישמר גם לאירועים דומים. <button class="btn btn-small" data-action="mm-tab" data-tab="${TAB_NONE}">לסיווג</button></p>` : ''}
+      ${tabsHTML}
       <div class="mm-filters">
-        <label class="small">קורס: <select data-mm="course" class="chip-select"><option value="">כל הקורסים (${all.length})</option>${courses.map((c) => `<option value="${esc(c.id)}"${c.id === page.course ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
-        <label class="small"><input type="checkbox" data-mm="done"${page.showDone ? ' checked' : ''}> הצג גם מה שסימנתי שהגשתי (${done.length})</label>
-        <span class="small muted">${open.length} פתוחות${overdueN ? ` · <b class="mm-overdue-n">${overdueN} באיחור</b>` : ''}</span>
+        <label class="small">קורס: <select data-mm="course" class="chip-select"><option value="">כל הקורסים</option>${courses.map((c) => `<option value="${esc(c.id)}"${c.id === page.course ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="small"><input type="checkbox" data-mm="done"${page.showDone ? ' checked' : ''}> הצג גם מה שהוגש או עבר (${done.length})</label>
+        <span class="small muted">${open.length} פתוחים${overdueN ? ` · <b class="mm-overdue-n">${overdueN} באיחור</b>` : ''}</span>
+        <a href="#/settings" class="small" data-action="mm-classes">ניהול קטגוריות</a>
       </div>
-      ${groups || (all.length ? ui.empty(page.course ? 'אין מטלות פתוחות בקורס הזה. 🎉' : 'אין מטלות פתוחות. 🎉') : ui.empty('עוד אין מטלות ממודל.'))}
+      ${groups || empty}
       ${doneBox}
     </div>`;
     const box = root.querySelector('.mymoodle');
     box.addEventListener('click', onPageClick);
     box.addEventListener('change', (e) => {
+      if (e.target.matches('[data-mm-cls]')) { pickClass(e.target.closest('[data-uid]').dataset.uid, e.target.value); return; }
       const k = e.target.dataset.mm;
       if (k === 'course') page.course = e.target.value;
       if (k === 'done') page.showDone = e.target.checked;
       if (k) CT.app.rerender();
     });
   };
+
+  /** Your class for an event (from the row's select): remembered for similar events, applied now. */
+  function pickClass(uid, cls) {
+    const before = Mo.records(S.state).get(uid);
+    if (!before) return;
+    const n = S.commit('סיווג אירוע ממודל', (st) => Mo.setClass(st, uid, cls, mergeOpts()));
+    const name = Mo.className(S.state, cls);
+    const def = Mo.classById(S.state, cls);
+    const where = def && def.toCourse ? ` (בדף הקורס: „${def.courseCat || def.name}”)` : '';
+    ui.toast(`סווג כ„${name}”${where}${n > 1 ? ` · גם ${n - 1} אירועים דומים` : ''} — נשמר לסנכרונים הבאים`, { action: { label: 'בטל', fn: S.undo } });
+  }
 
   const KIND = { new: '🆕 חדשה', changed: '✏️ השתנתה', gone: '👻 לא מופיעה יותר במודל', restored: '↩️ חזרה למודל' };
   function changesHTML() {
@@ -612,6 +784,8 @@
     else if (act === 'mm-import') V.pickFile();
     else if (act === 'mm-inbox') V.showInbox();
     else if (act === 'mm-seen') V.markSeen();
+    else if (act === 'mm-tab') { page.tab = a.dataset.tab; CT.app.rerender(); }
+    else if (act === 'mm-classes') { classesOpen = true; V.showSettings('moodle-classes'); }
     else if (act === 'mm-toggle') {
       const was = isDone(S.findItem(id).item);
       S.toggleDone(id);
@@ -620,8 +794,8 @@
   }
 
   /** Go to the Moodle card in settings. */
-  V.showSettings = () => {
-    const go = () => { const el = document.getElementById('moodle'); if (el) el.scrollIntoView({ block: 'start' }); };
+  V.showSettings = (id = 'moodle') => {
+    const go = () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'start' }); };
     if (location.hash !== '#/settings') { location.hash = '#/settings'; setTimeout(go, 60); } else go();
   };
 
