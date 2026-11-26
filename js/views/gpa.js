@@ -25,7 +25,7 @@
     if (!K.ready || !n) return 'free';
     if (K.labs.includes(n)) return 'lab';
     if (K.mandatorySet.has(n)) return 'mandatory';
-    if (K.electives().includes(n) || /^004/.test(n)) return 'faculty';
+    if (K.electives().includes(n) || K.isFaculty(n)) return 'faculty';
     return 'free';
   };
 

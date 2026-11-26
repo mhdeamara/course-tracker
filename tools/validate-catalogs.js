@@ -89,7 +89,8 @@ function check(entry) {
     if (!Number.isInteger(sem.sem) || sem.sem < 1 || sem.sem > MAX_SEM) errors.push(`${tag}: סמסטר לא קיים: ${sem.sem}`);
     if (sems.has(sem.sem)) errors.push(`${tag}: סמסטר ${sem.sem} מופיע פעמיים`);
     sems.add(sem.sem);
-    let sum = sem.labs || 0;
+    let sum = (sem.labs || 0) + ((sem.choice || {}).credits || 0);
+    if (sem.choice && !(c.choices || []).some((ch) => ch.id === sem.choice.id)) errors.push(`${tag}: סמסטר ${sem.sem} מפנה לבחירה ${sem.choice.id} שלא קיימת ב־choices`);
     for (const n of sem.nums || []) {
       ref(n, `חובה סמסטר ${sem.sem}`);
       if (n !== c.pe) {
@@ -111,6 +112,13 @@ function check(entry) {
     if (sem.statedCredits != null && Math.abs(sum - sem.statedCredits) > EPS)
       fail('semester-sum', null, `סמסטר ${sem.sem}: סכום המקצועות ${sum} ≠ הסכום המודפס ${sem.statedCredits}`);
     mandTotal += sum;
+  }
+  // "choose N credits from this list" inside the mandatory part (e.g. CS science courses)
+  for (const ch of c.choices || []) {
+    if (!(ch.credits > 0)) errors.push(`${tag}: בחירה ${ch.id}: credits לא תקין`);
+    for (const n of ch.nums || []) ref(n, `בחירה ${ch.id}`);
+    const semSlots = (c.mandatory || []).reduce((a, s2) => a + ((s2.choice && s2.choice.id === ch.id) ? s2.choice.credits : 0), 0);
+    mandTotal += ch.credits - semSlots; // the semester tables hold the minimum per slot; the total holds the real requirement
   }
   const t = c.totals || {};
   const mandNoPE = mandTotal - peTotal;
@@ -148,10 +156,40 @@ function check(entry) {
       errors.push(`${tag}: ${gt}: needDouble=${g.needDouble} לא סביר`);
     for (const opt of g.must || []) for (const n of opt)
       if (!gs.has(n)) errors.push(`${tag}: ${gt}: מקצוע מחייב ${n} לא ברשימת הקבוצה`);
+    for (const n of g.core || []) if (!gs.has(n)) errors.push(`${tag}: ${gt}: קורס ליבה ${n} לא ברשימת הקבוצה`);
+    if (g.minCore != null && (!(g.minCore > 0) || g.minCore > (g.core || []).length)) errors.push(`${tag}: ${gt}: minCore=${g.minCore} לא סביר`);
   }
+
+  // --- specializations (pick N; each has parts: all-of / N-of / credits-from) -----------
+  const specIds = new Set();
+  for (const sp of c.specializations || []) {
+    const st = `התמחות ${sp.id} (${sp.name})`;
+    if (specIds.has(sp.id)) errors.push(`${tag}: מזהה התמחות כפול ${sp.id}`);
+    specIds.add(sp.id);
+    for (const p of sp.parts || []) {
+      const pt = `${st} / ${p.name}`;
+      const ps = new Set(p.nums || []);
+      if (!ps.size) errors.push(`${tag}: ${pt}: רשימה ריקה`);
+      for (const n of p.nums || []) ref(n, pt);
+      for (const n of p.starred || []) if (!ps.has(n)) errors.push(`${tag}: ${pt}: מקצוע מסומן ${n} לא ברשימה`);
+      if (p.all && p.credits != null) {
+        const sum = (p.nums || []).reduce((a, n) => a + ((courses[n] || {}).credits || 0), 0);
+        if (Math.abs(sum - p.credits) > EPS) fail('spec-sum', null, `${pt}: סכום המקצועות ${sum} ≠ הסכום המודפס ${p.credits}`);
+      }
+      if (p.minCount != null && p.minCount > ps.size) errors.push(`${tag}: ${pt}: minCount=${p.minCount} גדול מהרשימה`);
+    }
+  }
+  if (c.minSpecializations != null && c.minSpecializations > specIds.size) errors.push(`${tag}: minSpecializations גדול ממספר ההתמחויות`);
 
   // --- other references -----------------------------------------------------------
   for (const n of c.freeSuggested || []) ref(n, 'בחירה חופשית מומלצת');
+  const listIds = new Set();
+  for (const l of c.facultyLists || []) {
+    if (listIds.has(l.id)) errors.push(`${tag}: מזהה רשימה כפול ${l.id}`);
+    listIds.add(l.id);
+    for (const n of l.nums || []) ref(n, `רשימה ${l.id}`);
+  }
+  for (const p of c.facultyPrefixes || []) if (!/^\d{4}$/.test(p)) errors.push(`${tag}: facultyPrefixes: קידומת לא תקינה ${p}`);
   for (const n of c.recommendedEarly || []) ref(n, 'בחירה פקולטית מומלצת');
   for (const [a, b] of Object.entries(c.replacedBy || {})) {
     if (!NUM_RE.test(b)) fail('invalid-number', b, `replacedBy: מספר לא תקין ${b}`);

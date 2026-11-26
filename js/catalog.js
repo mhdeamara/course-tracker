@@ -9,10 +9,14 @@
     5780: 'תש״פ', 5781: 'תשפ״א', 5782: 'תשפ״ב', 5783: 'תשפ״ג', 5784: 'תשפ״ד',
     5785: 'תשפ״ה', 5786: 'תשפ״ו', 5787: 'תשפ״ז', 5788: 'תשפ״ח', 5789: 'תשפ״ט', 5790: 'תש״ץ',
   };
-  const FACULTIES = { ee: 'הנדסת חשמל ומחשבים' };
-
   const cat = { ready: false };
-  cat.FACULTIES = FACULTIES;
+  /** Faculties come from the data only: a new catalogs/<faculty>/<year>.json (+ validator run) adds one.
+   *  Name = facultyName of the newest catalog of that faculty. */
+  cat.faculties = () => Object.entries(CT.catalogData || {}).map(([id, ys]) => {
+    const newest = ys[Math.max(...Object.keys(ys).map(Number))] || {};
+    return { id, name: newest.facultyName || id, track: newest.trackName || '' };
+  }).sort((a, b) => (a.id === 'ee' ? -1 : b.id === 'ee' ? 1 : a.name.localeCompare(b.name, 'he')));
+  Object.defineProperty(cat, 'FACULTIES', { enumerable: false, get: () => Object.fromEntries(cat.faculties().map((f) => [f.id, f.name])) });
   cat.yearLabel = (y) => YEAR_LABELS[y] || String(y);
   /** Academic years shown in the picker: a few before the oldest catalog up to one after the newest. */
   cat.pickerYears = (fac = 'ee') => {
@@ -29,7 +33,7 @@
     const all = (CT.catalogData || {})[fac] || {};
     const ys = Object.keys(all).map(Number).sort((a, b) => a - b);
     // drop the previous selection's fields
-    Object.keys(cat).forEach((k) => { if (typeof cat[k] !== 'function' && k !== 'FACULTIES') delete cat[k]; });
+    Object.keys(cat).forEach((k) => { if (typeof cat[k] !== 'function') delete cat[k]; });
     cat.ready = false;
     if (!ys.length) { cat.error = 'לא נמצאו קטלוגים (catalogs/bundle.js חסר — צריך להריץ node tools/validate-catalogs.js).'; return cat; }
     const wanted = year ? Number(year) : null;
@@ -45,6 +49,11 @@
     cat.fallback = !wanted ? 'none-chosen' : (wanted !== shown ? 'nearest' : null);
     cat.courses = {};
     Object.entries(d.courses).forEach(([num, c]) => { cat.courses[num] = Object.assign({ num }, c); });
+    ['labs', 'groups', 'recommendedEarly', 'freeSuggested', 'facultyRules', 'freeRules', 'choices', 'facultyLists', 'specializations']
+      .forEach((k) => { if (!Array.isArray(cat[k])) cat[k] = []; });
+    cat.replacedBy = cat.replacedBy || {};
+    cat.choiceSet = new Set();
+    cat.choices.forEach((ch) => ch.nums.forEach((n) => cat.choiceSet.add(n)));
     cat.mandatorySet = new Set();
     cat.mandatory.forEach((s) => {
       s.nums.forEach((n) => cat.mandatorySet.add(n));
@@ -79,7 +88,7 @@
 
   /** Every course in every catalog year of a faculty (for entering past semesters): number → {num, name, credits}.
    *  The chosen catalog wins; otherwise the newest year that lists the course. */
-  cat.allCourses = (fac = 'ee') => {
+  cat.allCourses = (fac = cat.faculty || 'ee') => {
     const all = (CT.catalogData || {})[fac] || {};
     const map = new Map();
     Object.keys(all).map(Number).sort((a, b) => b - a).forEach((y) => {
@@ -93,12 +102,20 @@
   cat.get = (num) => cat.courses && cat.courses[num] || { num, name: num, credits: null };
   /** Groups that contain a course number. */
   cat.groupsOf = (num) => (cat.groups || []).filter((g) => g.nums.includes(num));
-  /** Faculty electives = everything with a 004x prefix that is not mandatory + all group courses, minus labs. */
+  /** Is this a course of the catalog's own faculty (by number prefix)? EE files have no facultyPrefixes → 004x. */
+  cat.isFaculty = (num) => {
+    const ps = cat.facultyPrefixes && cat.facultyPrefixes.length ? cat.facultyPrefixes : ['004'];
+    return ps.some((p) => String(num).startsWith(p));
+  };
+  /** Faculty electives = own-faculty courses that are not mandatory + every course in a group, faculty list or
+   *  specialization, minus labs and the mandatory "choose from list" courses. */
   cat.electives = () => {
     const set = new Set();
-    Object.keys(cat.courses || {}).forEach((n) => { if (/^004/.test(n) && !cat.mandatorySet.has(n)) set.add(n); });
+    Object.keys(cat.courses || {}).forEach((n) => { if (cat.isFaculty(n) && !cat.mandatorySet.has(n)) set.add(n); });
     (cat.groups || []).forEach((g) => g.nums.forEach((n) => set.add(n)));
-    return [...set].filter((n) => !cat.labs.includes(n) && !cat.mandatorySet.has(n)).sort();
+    (cat.facultyLists || []).forEach((l) => l.nums.forEach((n) => set.add(n)));
+    (cat.specializations || []).forEach((sp) => sp.parts.forEach((p) => p.nums.forEach((n) => set.add(n))));
+    return [...set].filter((n) => !cat.labs.includes(n) && !cat.mandatorySet.has(n) && !cat.choiceSet.has(n)).sort();
   };
 
   CT.catalog = cat;

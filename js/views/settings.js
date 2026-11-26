@@ -242,8 +242,10 @@
     return `<section class="card">
       <h2>📘 תכנית לימודים</h2>
       <p class="small">שנת הקטלוג שלך היא בדרך כלל השנה שבה התחלת את התואר. הקטלוגים לא נדרסים — כל שנה נשמרת בנפרד.</p>
-      <div class="btn-row"><label class="small">פקולטה: <b>${esc(CT.catalog.FACULTIES.ee)}</b>, מסלול הנדסת חשמל</label>
+      <div class="btn-row"><label class="small">פקולטה: ${C.facultyPicker()}</label>
         <label class="small">שנת קטלוג: ${C.yearPicker()}</label></div>
+      ${CT.catalog.ready ? `<p class="small muted">מסלול: ${esc(CT.catalog.trackName)} (<span dir="ltr">${esc(CT.catalog.track)}</span>). רשימת הפקולטות נבנית מקבצי הקטלוג בלבד.</p>` : ''}
+      ${C.picksHTML()}
       ${C.sourceHTML()}
     </section>`;
   }
@@ -251,6 +253,9 @@
   function onChange(e) {
     const t = e.target;
     if (t.matches('[data-action=cat-year]')) { CT.views.catalog.setYear(t.value); return; }
+    if (t.matches('[data-action=cat-fac]')) { CT.views.catalog.setFaculty(t.value); return; }
+    if (t.matches('[data-action=cat-group]')) { CT.views.catalog.toggleGroup(t.value); return; }
+    if (t.matches('[data-action=cat-spec]')) { CT.views.catalog.setSpec(t.value); return; }
     if (t.dataset.moodlePref) { CT.views.moodle.onChange(t); return; }
     if (t.dataset.aiPref) { CT.views.ai.onChange(t); return; }
     if (t.dataset.gpa) {
