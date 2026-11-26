@@ -1447,4 +1447,5 @@ body.adk-open { overflow: hidden; }
   .adk-count { width: 96px; height: 96px; }
   #adk-toasts { inset-inline: 16px; bottom: 84px; max-width: none; }
 }
+#adk-toasts[hidden], body:has(.focus-screen) #adk-toasts { display: none; } /* waits (not dismissed) during focus */
 @media print { .adk, #adk-toasts { display: none !important; } }

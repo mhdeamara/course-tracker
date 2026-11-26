@@ -15,6 +15,7 @@
   const HE = { m: 'אזכרות הבוקר', e: 'אזכרות הערב', g: 'אזכרות כלליות' };
   const st = () => S.state;
   const cfg = () => A.cfg(st());
+  const ptsAdk = () => { try { return CT.game.cfg(st()).pts.adk; } catch (e) { return 5; } };
   const motionOk = () => !(CT.app && CT.app.reducedMotion && CT.app.reducedMotion());
   const tm = (min) => `<span class="num-ltr">${A.fmt(min)}</span>`;
   const rng = (a, b) => `<span class="num-ltr">${A.fmt(a)}–${A.fmt(b)}</span>`;
@@ -131,7 +132,9 @@
     if (!it) return;
     const before = (A.progress(st(), doc, R.p).counts[it.id] || 0);
     if (before >= it.count) { go(R.i + 1); return; } // already full: a tap moves on
-    const res = S.commit('אזכרה', (s) => A.tap(s, doc, R.p, it.id), { undo: false, silent: true });
+    // the tap that finishes the morning/evening is an undo step (Ctrl+Z takes the completion — and its points — back)
+    const fin = A.wouldFinish(st(), doc, R.p, it.id);
+    const res = S.commit(fin ? (R.p === 'm' ? 'השלמת אזכרות בוקר' : 'השלמת אזכרות ערב') : 'אזכרה', (s) => A.tap(s, doc, R.p, it.id), { undo: fin, silent: true });
     if (!res) return;
     buzz(res.full ? [18, 40, 18] : 10);
     paint();
@@ -242,7 +245,7 @@
         </div>
         <div class="adk-home-a">
           <button class="btn btn-primary" data-adk-home="open" data-p="${p}">${prog.full ? 'להמשיך' : 'להתחיל'}</button>
-          <button class="btn btn-ghost btn-small" data-adk-home="mark" data-p="${p}">כבר אמרתי</button>
+          <button class="btn btn-ghost btn-small" data-adk-home="mark" data-p="${p}" title="מסמן כבוצע (בלי נקודות)">כבר אמרתי</button>
         </div>
       </section>`;
   };
@@ -302,8 +305,11 @@
     if (!box) { box = document.createElement('div'); box.id = 'adk-toasts'; box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
     return box;
   };
-  /** A small card in the corner: never blocks, can be dismissed, hides by itself (pauses while hovered/focused). */
-  const note = ({ title, body, actions = [], ms = 15000 }) => {
+  /**
+   * A small card in the corner: never blocks the page. By default it hides by itself (pauses while hovered/focused);
+   * `sticky` cards stay until a button or × is pressed (onX runs for ×).
+   */
+  const note = ({ title, body, actions = [], ms = 15000, sticky = false, onX }) => {
     const t = document.createElement('div');
     t.className = 'adk-toast' + (motionOk() ? '' : ' still');
     t.setAttribute('role', 'status');
@@ -313,15 +319,18 @@
     let timer = null;
     const close = () => { clearTimeout(timer); t.classList.add('out'); setTimeout(() => t.remove(), motionOk() ? 300 : 0); };
     const arm = () => { clearTimeout(timer); timer = setTimeout(close, ms); };
-    t.querySelector('.adk-toast-x').onclick = close;
+    t.querySelector('.adk-toast-x').onclick = () => { close(); if (onX) onX(); };
     t.querySelectorAll('[data-k]').forEach((b) => { b.onclick = () => { close(); actions[Number(b.dataset.k)].fn(); }; });
-    t.addEventListener('mouseenter', () => clearTimeout(timer));
-    t.addEventListener('mouseleave', arm);
-    t.addEventListener('focusin', () => clearTimeout(timer));
-    t.addEventListener('focusout', arm);
+    if (!sticky) {
+      t.addEventListener('mouseenter', () => clearTimeout(timer));
+      t.addEventListener('mouseleave', arm);
+      t.addEventListener('focusin', () => clearTimeout(timer));
+      t.addEventListener('focusout', arm);
+    }
     toastBox().appendChild(t);
-    arm();
+    if (!sticky) arm();
     if (cfg().sound) chime();
+    return t;
   };
   const sysNotify = (title, body) => {
     try {
@@ -332,16 +341,36 @@
     } catch (e) { return false; }
   };
 
+  /*
+   * The "start now?" card stays until a button or × is pressed; only then is the window marked as seen (on this device),
+   * so a refresh shows it again. It is hidden (not dismissed) while busy, and removed when the window ends or it's done.
+   */
+  let perCard = null; // { p, day, el }
+  const markSeen = (p, day) => updMem((m) => { m.seen = m.seen || {}; m.seen[p] = day; });
   const showPeriod = (p) => {
     const day = A.dayKey();
-    updMem((m) => { m.seen = m.seen || {}; m.seen[p] = day; });
-    if (document.hidden) { sysNotify(NAMES[p], `${HE[p]} — אפשר להתחיל כשנוח.`); return; }
-    note({
+    if (document.hidden) { markSeen(p, day); sysNotify(NAMES[p], `${HE[p]} — אפשר להתחיל כשנוח.`); return; }
+    if (perCard && document.contains(perCard.el)) return;
+    const seen = () => { markSeen(p, day); perCard = null; };
+    const el = note({
       title: `<span lang="ar" dir="rtl">${NAMES[p]}</span>`,
       body: `<p class="small muted">${HE[p]} — להתחיל עכשיו?</p>`,
-      actions: [{ label: 'להתחיל', fn: () => V.open(p) }, { label: 'אחר כך', fn: () => {} }],
-      ms: 20000,
+      actions: [{ label: 'להתחיל', fn: () => { seen(); V.open(p); } }, { label: 'אחר כך', fn: seen }],
+      sticky: true,
+      onX: seen,
     });
+    perCard = { p, day, el };
+  };
+  /** Hide the cards while busy (they wait, not dismissed); drop a "start now?" card whose moment has passed. */
+  const tidy = () => {
+    const box = document.getElementById('adk-toasts');
+    if (box) box.hidden = busy();
+    if (!perCard) return;
+    const s = st();
+    if (!document.contains(perCard.el)) { perCard = null; return; }
+    if (!s || !A.on(s) || A.dayKey() !== perCard.day || A.period(cfg()) !== perCard.p || A.isDone(s, perCard.p, perCard.day)) {
+      perCard.el.remove(); perCard = null;
+    }
   };
   const showGeneral = () => {
     const m = mem();
@@ -358,6 +387,7 @@
   };
 
   function check() {
+    tidy();
     const s = st();
     if (!s || !A.on(s)) return;
     if (busy()) return; // waits: the same reminder is still due when the focus time ends
@@ -368,7 +398,7 @@
     if (document.hidden && !(m.notify && 'Notification' in window && Notification.permission === 'granted')) return; // shown when back
     whenLoaded(() => {
       if (busy()) return;
-      const per = due.find((x) => x.type === 'period');
+      const per = due.find((x) => x.type === 'period' && !(perCard && perCard.p === x.p));
       if (per) showPeriod(per.p);
       else if (due.some((x) => x.type === 'general')) showGeneral();
     });
@@ -379,6 +409,7 @@
     if (A.on(st())) V.load().catch(() => {});
     setTimeout(check, 1500); // after the page has settled: the "start now?" card when opened inside a window
     setInterval(check, 30000);
+    setInterval(tidy, 1000); // a focus screen / timer / pause hides the cards within a second (CSS hides them at once over the focus screen)
     document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(check, 800); });
   };
 
@@ -436,7 +467,8 @@
       <p class="adk-sample" lang="ar" dir="rtl" style="--adk-scale:${Number(c.font) || 1}">سُبْحَانَ اللَّهِ وَبِحَمْدِهِ</p>
 
       <h3>נקודות</h3>
-      <label class="check-field"><input type="checkbox" data-adk-set="points" ${c.points ? 'checked' : ''}> <span>לחבר למערכת הנקודות (כבוי). כשמופעל: נקודות קטנות על השלמה, מהיום שהופעל והלאה. אף פעם לא ניכויים.</span></label>
+      <label class="check-field"><input type="checkbox" data-adk-set="points" ${c.points ? 'checked' : ''}> <span>לחבר למערכת הנקודות: +${esc(String(ptsAdk()))} על השלמת הבוקר או הערב במסך הקריאה (פעם אחת לכל חלון ביום). "כבר אמרתי" לא נותן נקודות. אף פעם לא ניכויים, ולא נכנס למינימום היומי או לרצף הלימוד.</span></label>
+      <p class="small muted">את ערך הנקודות אפשר לשנות בדף הנקודות ← הגדרות. כיבוי לא מוריד נקודות שכבר התקבלו.</p>
       <p><button class="btn btn-small" data-adk-act="reset">החזרת הגדרות האזכרות לברירת המחדל</button></p>
       ` : ''}
     </section>`;

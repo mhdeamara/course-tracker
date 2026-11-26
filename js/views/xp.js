@@ -474,7 +474,7 @@
       <h3>כמה שווה כל דבר</h3>
       <div class="form-grid game-grid">
         ${num('pts.easy', 'פריט קל', p.easy, 0, 200)}${num('pts.normal', 'פריט רגיל', p.normal, 0, 200)}${num('pts.hard', 'פריט קשה', p.hard, 0, 300)}
-        ${num('pts.per10min', 'כל 10 דק׳ לימוד', p.per10min, 0, 50)}
+        ${num('pts.per10min', 'כל 10 דק׳ לימוד', p.per10min, 0, 50)}${num('pts.adk', 'אזכרות בוקר/ערב (השלמה)', p.adk, 0, 50)}
       </div>
       <h3>יעדים (פריטים <b>או</b> דקות)</h3>
       <div class="form-grid game-grid">

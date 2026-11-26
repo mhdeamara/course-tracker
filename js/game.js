@@ -29,7 +29,7 @@
       course: 100, // finishing a course (graded / pass / exemption)
       start: 3, // "רק 5 דקות": starting is what counts (once per item per day)
       sub: 2, // each subtask checked off
-      adk: 5, // adhkar morning / evening completed — only if linked in the adhkar settings (off by default)
+      adk: 5, // adhkar morning / evening finished in the reading screen (linked by default; can be turned off there)
       goalDay: 15, goalWeek: 50, // reaching the daily / weekly goal
       challenge: 10, // the daily challenge
       badge: 10, // each new badge
@@ -152,7 +152,8 @@
   /** Days in a row (ending today, or yesterday if nothing yet today) with at least one point earned. */
   g.streak = (st, today = g.dayKey()) => {
     const days = new Set();
-    ((st.game && st.game.ledger) || []).forEach((e) => { if (e.p > 0 && e.t !== 'rev') days.add(e.d); });
+    // adhkar points don't keep the study streak (and its bonus) alive on their own
+    ((st.game && st.game.ledger) || []).forEach((e) => { if (e.p > 0 && e.t !== 'rev' && e.t !== 'adk') days.add(e.d); });
     const gm = st.game || {};
     const neutral = (d) => g.pausedOn(gm, d) || (gm.freezes || []).includes(d);
     let d = today;
@@ -259,14 +260,17 @@
       want.set('study:' + e.id, () => award('study:' + e.id, 'study', Math.floor((e.minutes * cfg.pts.per10min) / 10), [u.fmtMinutes(e.minutes)], 'זמן לימוד', { m: e.minutes }));
     });
 
-    // Adhkar: only when the user linked them (off by default), from that day on; never a deduction.
+    // Adhkar: finished in the reading screen, once per window per day, while linked; never a deduction.
     if (CT.adhkar) CT.adhkar.pointKeys(st).forEach((x) => {
-      want.set(x.k, () => award(x.k, 'adk', cfg.pts.adk, [x.p === 'm' ? 'أذكار الصباح' : 'أذكار المساء'], 'אזכרות'));
+      const name = x.p === 'm' ? 'אזכרות בוקר' : 'אזכרות ערב';
+      want.set(x.k, () => award(x.k, 'adk', cfg.pts.adk, [name], name));
     });
 
     // Reverse what is active but no longer true (notes are never taken back once written).
+    // Adhkar points go back only when that completion was undone — not when the link is turned off.
     last.forEach((e, k) => {
-      if (e.t !== 'rev' && !want.has(k) && REVERSIBLE.test(k)) reverse(k, e.label);
+      if (e.t === 'rev' || want.has(k)) return;
+      if (REVERSIBLE.test(k) || (k.startsWith('adk:') && CT.adhkar && !CT.adhkar.keepPoints(st, k, day))) reverse(k, e.label);
     });
     // Award what is true but not active yet. Baseline keys never earn; a note earns once, ever.
     want.forEach((make, k) => {
@@ -418,7 +422,13 @@
     const weeks = new Map();
     A.forEach((e) => { const w = u.weekStart(e.d); if (!weeks.has(w)) weeks.set(w, []); weeks.get(w).push(e); });
     const perWeek = [...weeks.values()].map(statsOf);
-    const days = [...new Set(L.filter((e) => e.p > 0 && e.t !== 'rev' && g.EARN_TYPES.has(e.t)).map((e) => e.d))].sort();
+    const days = [...new Set(L.filter((e) => e.p > 0 && e.t !== 'rev' && e.t !== 'adk' && g.EARN_TYPES.has(e.t)).map((e) => e.d))].sort();
+    // adhkar: longest run of days with both morning and evening finished in the reading screen
+    const adkDays = new Map();
+    A.forEach((e) => { if (e.t === 'adk') { const [, d, p] = e.k.split(':'); adkDays.set(d, (adkDays.get(d) || '') + p); } });
+    const both = [...adkDays.keys()].filter((d) => /m/.test(adkDays.get(d)) && /e/.test(adkDays.get(d))).sort();
+    let adkBoth = 0, adkRun = 0;
+    both.forEach((d, i) => { adkRun = i && u.daysBetween(both[i - 1], d) === 1 ? adkRun + 1 : 1; adkBoth = Math.max(adkBoth, adkRun); });
     let maxStreak = 0, run = 0, maxGap = 0;
     days.forEach((d, i) => {
       const gap = i ? u.daysBetween(days[i - 1], d) : 1;
@@ -427,11 +437,11 @@
       maxStreak = Math.max(maxStreak, run);
     });
     const count = (t, f = () => true) => A.filter((e) => e.t === t && f(e)).length;
-    return { st, cfg, A, perDay, perWeek, maxStreak, maxGap, count, earned: g.earned(st) };
+    return { st, cfg, A, perDay, perWeek, maxStreak, maxGap, count, adkBoth, earned: g.earned(st) };
   };
 
   const COURSES_OF = (st, semId) => st.courses.filter((c) => c.semesterId === semId && c.kind !== 'record' && !c.archived);
-  /** All 25. `secret` ones show as "?" until earned. */
+  /** All 27. `secret` ones show as "?" until earned. */
   g.BADGES = [
     { id: 'first', icon: '👣', name: 'צעד ראשון', desc: 'לסיים פריט ראשון', test: (c) => c.count('item') >= 1 },
     { id: 'tutorial', icon: '✏️', name: 'תרגול ראשון', desc: 'לסיים תרגול', test: (c) => c.count('item', (e) => /תרגול|tutorial/i.test(`${e.cat || ''} ${e.label || ''}`)) >= 1 },
@@ -458,6 +468,9 @@
     { id: 'night', icon: '🦉', name: 'ינשוף לילה', desc: 'לסיים פריט בין חצות ל-4 לפנות בוקר', secret: true, test: (c) => c.A.some((e) => e.t === 'item' && new Date(e.at).getHours() < 4) },
     { id: 'comeback', icon: '💪', name: 'קאמבק', desc: 'לסגור משהו שהיה באיחור של שבוע ויותר', secret: true, test: (c) => c.count('item', (e) => e.lt >= 7) >= 1 },
     { id: 'k1', icon: '💎', name: 'מועדון האלף', desc: 'לצבור 1,000 נקודות', test: (c) => c.earned >= 1000 },
+    // adhkar (count only completions in the reading screen, while linked to points)
+    { id: 'adk-both7', icon: '🌅', name: 'בוקר וערב, שבוע ברצף', desc: '7 ימים רצופים עם אזכרות בוקר וערב (במסך הקריאה)', test: (c) => c.adkBoth >= 7 },
+    { id: 'adk30', icon: '📿', name: '30 השלמות', desc: '30 השלמות של אזכרות בוקר או ערב (במסך הקריאה)', test: (c) => c.count('adk') >= 30 },
   ];
   g.badgesEarned = (st) => {
     const out = new Map();

@@ -295,8 +295,8 @@ test('badges: earned once, kept even when the reason is undone; secret ones too'
   assert.equal(g.badgesEarned(st).size, 4, 'badges stay');
   a.status = 'done';
   assert.equal(ofType(g.reconcile(st, NOW), 'badge').length, 0, 'never twice');
-  assert.equal(g.BADGES.length, 25);
-  assert.equal(new Set(g.BADGES.map((b) => b.id)).size, 25);
+  assert.equal(g.BADGES.length, 27);
+  assert.equal(new Set(g.BADGES.map((b) => b.id)).size, 27);
   assert.deepEqual(g.BADGES.filter((b) => b.secret).map((b) => b.id).sort(), ['back', 'comeback', 'night']);
 });
 

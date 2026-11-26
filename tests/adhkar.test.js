@@ -173,20 +173,92 @@ test('pickGeneral never repeats the last one', () => {
   for (let k = 0; k < 20; k++) assert.notEqual(A.pickGeneral(DOC, g[0].id, () => 0).id, g[0].id);
 });
 
-/* ---------- optional points link (off by default, never deductions) ---------- */
-test('points: nothing unless linked; from the day it was linked; no deductions for missed days', () => {
-  const st = fresh();
-  G.ensure(st, at(8, 0, 20)); st.game.cfg.extras = false;
-  A.markDone(st, 'm', at(7, 0, 24));
-  assert.equal(G.reconcile(st, at(12)).filter((e) => e.t === 'adk').length, 0); // off by default
-  A.set(st, 'points', true, '2026-11-25');
-  A.markDone(st, 'e', at(18, 0, 25));
-  A.markDone(st, 'm', at(7, 0, 26));
-  const added = G.reconcile(st, at(12));
-  assert.deepEqual(added.filter((e) => e.t === 'adk').map((e) => e.k).sort(), ['adk:2026-11-25:e', 'adk:2026-11-26:m']);
-  assert.ok(added.every((e) => e.p >= 0));
-  A.set(st, 'points', false);
-  assert.equal(G.reconcile(st, at(13)).filter((e) => e.p < 0).length, 0); // turning it off takes nothing back
+/* ---------- points link (on by default; reading screen only; never deductions) ---------- */
+const readAll = (st, p, d) => { const t = p === 'm' ? at(7, 0, d) : at(18, 0, d); A.group(DOC, p).forEach((x) => { for (let k = 0; k < x.count; k++) A.tap(st, DOC, p, x.id, t); }); };
+const adk = (L) => L.filter((e) => e.t === 'adk' || (e.t === 'rev' && e.k.startsWith('adk:')));
+const ptsState = (cfg) => { const st = fresh(cfg); G.ensure(st, at(8, 0, 20)); st.game.cfg.extras = false; return st; };
+
+test('points: linked by default from the release day, never earlier; only the reading screen earns', () => {
+  const st = ptsState();
+  assert.equal(A.cfg(st).points, true);
+  assert.equal(A.pointsSince(st), A.POINTS_SINCE);
+  readAll(st, 'm', 25); // the day before the release: nothing
+  A.markDone(st, 'e', at(18, 0, 26)); // "כבר אמרתי": done, no points
+  assert.equal(A.isDone(st, 'e', '2026-11-26'), true);
+  readAll(st, 'm', 26);
+  const added = adk(G.reconcile(st, at(20)));
+  assert.deepEqual(added.map((e) => [e.k, e.p, e.label]), [['adk:2026-11-26:m', 5, 'אזכרות בוקר']]);
+  assert.equal(st.adhkar.days['2026-11-26'].m.via, 'read');
+  assert.equal(st.adhkar.days['2026-11-26'].e.via, 'mark');
+});
+
+test('points: once per window per day — re-reading, more taps and repeated syncs add nothing', () => {
+  const st = ptsState();
+  readAll(st, 'e', 27);
+  assert.equal(adk(G.reconcile(st, at(20, 0, 27))).length, 1);
+  readAll(st, 'e', 27); // counters are capped; reading again changes nothing
+  A.markDone(st, 'e', at(19, 0, 27));
+  assert.equal(adk(G.reconcile(st, at(20, 30, 27))).length, 0);
+  assert.equal(adk(G.reconcile(st, at(21, 0, 27))).length, 0);
+  assert.equal(st.game.ledger.filter((e) => e.k === 'adk:2026-11-27:e').length, 1);
+  readAll(st, 'm', 28); readAll(st, 'e', 28);
+  assert.equal(adk(G.reconcile(st, at(20, 0, 28))).length, 2, 'morning and evening are separate windows');
+});
+
+test('points: undoing the completion takes back exactly what was given; turning the link off takes nothing', () => {
+  const st = ptsState();
+  st.game.cfg.pts = { adk: 7 }; // the value can be changed
+  readAll(st, 'm', 27);
+  const before = G.balance(st);
+  G.reconcile(st, at(12, 0, 27));
+  assert.equal(G.balance(st), before + 7);
+  const snap = JSON.parse(JSON.stringify(st.adhkar));
+  st.adhkar.days['2026-11-27'].m.done = false; // e.g. an older version of the data came back from another device
+  const rev = adk(G.reconcile(st, at(13, 0, 27)));
+  assert.deepEqual(rev.map((e) => [e.t, e.p]), [['rev', -7]]);
+  assert.equal(G.balance(st), before);
+  st.adhkar = snap; // completed again: earns again
+  G.reconcile(st, at(14, 0, 27));
+  assert.equal(G.balance(st), before + 7);
+  A.set(st, 'points', false, '2026-11-27');
+  assert.equal(adk(G.reconcile(st, at(15, 0, 27))).length, 0, 'turning it off takes nothing back');
+  readAll(st, 'e', 27);
+  assert.equal(adk(G.reconcile(st, at(20, 0, 27))).length, 0, 'and earns nothing new');
+  A.set(st, 'points', true, '2026-11-28');
+  assert.equal(adk(G.reconcile(st, at(21, 0, 27))).length, 0, 'turning it on again is not retroactive');
+  A.set(st, 'enabled', false, '2026-11-28');
+  assert.equal(adk(G.reconcile(st, at(22, 0, 27))).length, 0, 'switching the feature off takes nothing back');
+});
+
+test('points: never a deduction; adhkar are outside the daily minimum and the study streak', () => {
+  const st = ptsState();
+  G.setPenalties(st, true, at(8, 0, 20));
+  st.game.cfg.penalty.graceDays = 0; st.game.cfg.penalty.freezesPerMonth = 0;
+  // the 27th: the study minimum met (a 30-minute session), no adhkar at all → no deduction
+  st.studyLog.push({ id: 's27', date: '2026-11-27', minutes: 30 });
+  G.reconcile(st, at(12, 0, 27));
+  // the 28th: only adhkar → they don't count as the study minimum, and missing adhkar is never the reason
+  readAll(st, 'm', 28); readAll(st, 'e', 28);
+  G.reconcile(st, at(12, 0, 29));
+  const pens = st.game.ledger.filter((e) => e.t === 'pen');
+  assert.ok(!pens.some((e) => e.d === '2026-11-27'), 'a day without adhkar costs nothing');
+  assert.ok(pens.every((e) => !/אזכר|adk/.test(JSON.stringify(e))));
+  assert.ok(st.game.ledger.filter((e) => e.t === 'adk').every((e) => e.p > 0));
+  assert.equal(G.minimumMet(G.dayStats(st.game.ledger, '2026-11-28'), st.game.cfg.penalty), false);
+  assert.equal(G.streak(st, '2026-11-28').today, false, 'adhkar alone does not keep the study streak');
+});
+
+test('points: two adhkar achievements — 7 days of morning and evening, and 30 completions', () => {
+  const st = ptsState();
+  st.game.cfg.extras = true;
+  const badges = () => [...G.badgesEarned(st).keys()].filter((k) => k.startsWith('adk'));
+  for (let d = 26; d <= 31; d++) { readAll(st, 'm', d); readAll(st, 'e', d); G.reconcile(st, new Date(2026, 10, d, 21)); } // 26 Nov – 1 Dec
+  assert.deepEqual(badges(), [], '6 days are not enough');
+  readAll(st, 'm', 32); readAll(st, 'e', 32); // 2 Dec
+  G.reconcile(st, new Date(2026, 11, 2, 21));
+  assert.deepEqual(badges(), ['adk-both7']);
+  for (let d = 33; d <= 40; d++) { readAll(st, 'm', d); readAll(st, 'e', d); G.reconcile(st, new Date(2026, 10, d, 21)); }
+  assert.deepEqual(badges().sort(), ['adk-both7', 'adk30']);
 });
 
 /* ---------- the data file ---------- */

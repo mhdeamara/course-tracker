@@ -1,7 +1,7 @@
 /* adhkar.js — أذكار: settings, time windows (set by hand, or from prayer times computed on this device with no
  * network request), daily counters and completion, and when a gentle reminder is due. No DOM here.
- * The texts live in data/adhkar.json. Nothing here touches the points system unless the user turns it on,
- * and a dhikr that was not done never costs anything. */
+ * The texts live in data/adhkar.json. Points: linked by default (the owner's choice, 2026-11-26), only for a
+ * morning/evening finished in the reading screen, can be turned off; a dhikr that was not done never costs anything. */
 (function (CT) {
   'use strict';
   const u = CT.u;
@@ -18,9 +18,11 @@
     startToast: true, // a gentle note when a window starts while the site is open
     general: { every: 30, quietFrom: '22:00', quietTo: '08:00' }, // a random general dhikr every N minutes (0 = off)
     sound: false, vibrate: true, font: 1, // reading screen: text size factor 0.8–2
-    points: false, // link to the points system (off; never deductions)
+    points: true, // link to the points system: points for finishing in the reading screen (never deductions)
   };
   A.FREQS = [0, 30, 60, 120, 180];
+  /** Points start here for everyone who never touched the switch (the day the link became the default) — never earlier. */
+  A.POINTS_SINCE = '2026-11-26';
   A.PERIODS = { m: 'morning', e: 'evening', g: 'general' };
 
   /* Coordinates (degrees). Times use this device's clock and time zone. */
@@ -55,7 +57,8 @@
   };
 
   /* ---------- state ---------- */
-  /** st.adhkar = { cfg (only what differs from the defaults), days: { 'YYYY-MM-DD': { m|e|g: { c: {id: n}, done, at } } }, pointsFrom } */
+  /** st.adhkar = { cfg (only what differs from the defaults), days: { 'YYYY-MM-DD': { m|e|g: { c: {id: n}, done, at, via } } }, pointsFrom }
+   * via: 'read' = every counter reached its target in the reading screen · 'mark' = "כבר אמרתי" (no points) */
   A.ensure = (st) => {
     if (!isObj(st.adhkar)) st.adhkar = {};
     const a = st.adhkar;
@@ -75,7 +78,14 @@
     o[keys[keys.length - 1]] = value;
     if (path === 'points') a.pointsFrom = value ? today : ''; // never retroactive
   };
-  A.reset = (st) => { A.ensure(st).cfg = {}; st.adhkar.pointsFrom = ''; };
+  A.reset = (st, today = u.today()) => { A.ensure(st).cfg = {}; st.adhkar.pointsFrom = A.DEFAULTS.points ? today : ''; };
+  /** The day points start from, or '' when not linked. Never retroactive. */
+  A.pointsSince = (st) => {
+    const a = st && st.adhkar;
+    if (!a || !A.cfg(st).points || A.cfg(st).enabled === false) return '';
+    if (a.pointsFrom) return a.pointsFrom;
+    return a.cfg && a.cfg.points === undefined ? A.POINTS_SINCE : '';
+  };
 
   /* ---------- time ---------- */
   A.dayKey = (now = new Date()) => u.isoDate(new Date(now));
@@ -193,11 +203,22 @@
     r.c[id] = n;
     const all = items.every((x) => (r.c[x.id] || 0) >= x.count);
     const wasDone = r.done;
-    if (all && p !== 'g') { r.done = true; r.at = r.at || new Date(now).toISOString(); }
+    if (all && p !== 'g') { r.done = true; r.at = r.at || new Date(now).toISOString(); r.via = 'read'; }
     return { n, full: n >= it.count, groupDone: all && !wasDone && p !== 'g' };
   };
   /** Mark the morning/evening as done without counting (said it from memory, in the mosque...). */
-  A.markDone = (st, p, now = new Date()) => { const r = A.rec(st, A.dayKey(now), p, true); r.done = true; r.at = r.at || new Date(now).toISOString(); };
+  A.markDone = (st, p, now = new Date()) => {
+    const r = A.rec(st, A.dayKey(now), p, true);
+    if (!r.done) r.via = 'mark';
+    r.done = true; r.at = r.at || new Date(now).toISOString();
+  };
+  /** Would one more tap on `id` finish the whole morning/evening? (the reader makes that tap an undo step) */
+  A.wouldFinish = (st, doc, p, id, now = new Date()) => {
+    if (p === 'g') return false;
+    const pr = A.progress(st, doc, p, now);
+    if (pr.done) return false;
+    return A.group(doc, p).every((x) => (pr.counts[x.id] || 0) + (x.id === id ? 1 : 0) >= x.count);
+  };
   A.resetDay = (st, p, now = new Date()) => { const a = A.ensure(st); const d = a.days[A.dayKey(now)]; if (d) delete d[p]; };
   A.progress = (st, doc, p, now = new Date()) => {
     const items = A.group(doc, p);
@@ -245,16 +266,27 @@
   };
 
   /* ---------- optional link to the points system (off by default) ---------- */
-  /** Days (from the day it was turned on) whose morning/evening was completed: [{ k, day, p }]. */
+  const readDone = (r) => !!(r && r.done && r.via === 'read');
+  /** Mornings/evenings finished in the reading screen since points started: [{ k, day, p }]. Once per window per day. */
   A.pointKeys = (st) => {
-    const a = st && st.adhkar;
-    if (!a || !a.pointsFrom || !A.cfg(st).points || A.cfg(st).enabled === false) return [];
+    const a = st && st.adhkar, since = A.pointsSince(st);
+    if (!a || !since) return [];
     const out = [];
     Object.keys(a.days || {}).forEach((day) => {
-      if (day < a.pointsFrom) return;
-      ['m', 'e'].forEach((p) => { if (a.days[day][p] && a.days[day][p].done) out.push({ k: `adk:${day}:${p}`, day, p }); });
+      if (day < since) return;
+      ['m', 'e'].forEach((p) => { if (readDone(a.days[day][p])) out.push({ k: `adk:${day}:${p}`, day, p }); });
     });
     return out;
+  };
+  /**
+   * Should points already given for `adk:day:p` stay? Yes unless that completion was undone. Turning the link (or the
+   * whole feature) off stops new points but takes nothing back; days dropped by prune() keep theirs too.
+   */
+  A.keepPoints = (st, k, today = u.today()) => {
+    const [, day, p] = String(k).split(':');
+    if (!day || day < u.addDays(today, -120)) return true;
+    const r = A.rec(st, day, p, false);
+    return !!(r && r.done && r.via !== 'mark');
   };
 
   CT.adhkar = A;
