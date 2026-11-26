@@ -12,3 +12,5 @@ course-tracker-data.json
 supabase/.temp/
 .env
 .env.*
+# extension ZIPs built by tools/pack-extension.mjs
+dist/

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>הגדרות — מעקב קורסים</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options">
+  <div class="wrap">
+    <h1><img src="icons/icon-48.png" alt="" width="36" height="36"> הגדרות התוסף</h1>
+
+    <section class="card">
+      <h2>מצב</h2>
+      <label class="check"><input type="radio" name="mode" value="local"> <span><b>מקומי בלבד</b> (ברירת מחדל) — בלי חשבון ובלי שרת. כשהאתר פתוח הוא מעביר לתוסף תמונת מצב קטנה, והתוסף מציג את האחרונה.</span></label>
+      <label class="check"><input type="radio" name="mode" value="connected" id="mode-connected"> <span><b>מחובר לחשבון</b> — קורא גם את הנתונים שלך מ-Supabase (רק אחרי שמזינים פרויקט ומתחברים למטה), כדי שהמונה יתעדכן גם כשהאתר סגור.</span></label>
+      <p id="mode-status" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>כתובת האתר</h2>
+      <label class="field"><span>האתר שממנו התוסף מקבל נתונים</span><input type="url" id="site" dir="ltr" spellcheck="false"></label>
+      <div class="actions"><button class="btn" id="site-save">שמירה</button><button class="btn" id="site-reset">ברירת מחדל</button></div>
+      <p class="note">כתובת אחרת (עותק משלך של האתר) — Chrome יבקש הרשאה לכתובת הזאת בלבד.</p>
+      <p id="site-status" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>חיבור לחשבון (Supabase)</h2>
+      <p class="note">רק לפרויקט Supabase <b>שלך</b>. מזינים את כתובת הפרויקט ואת המפתח <b>הציבורי</b> (anon / publishable) — אותו מפתח שנמצא ב-<code>js/config.js</code> של האתר. מפתח סודי (service_role / secret) לא יתקבל.</p>
+      <label class="field"><span>כתובת הפרויקט</span><input type="url" id="sb-url" dir="ltr" placeholder="https://xxxx.supabase.co" spellcheck="false"></label>
+      <label class="field"><span>מפתח ציבורי</span><input type="text" id="sb-key" dir="ltr" placeholder="sb_publishable_… או eyJ…" spellcheck="false" autocomplete="off"></label>
+      <div class="actions"><button class="btn" id="sb-save">שמירת הפרויקט</button><button class="btn" id="sb-clear">מחיקה</button></div>
+      <p id="sb-status" class="status"></p>
+      <fieldset id="login">
+        <div id="signed-in" hidden><p>מחובר כ-<b id="who" dir="ltr"></b></p><div class="actions"><button class="btn" id="signout">התנתק</button></div></div>
+        <div id="signed-out">
+          <label class="field"><span>אימייל</span><input type="email" id="email" dir="ltr" autocomplete="username"></label>
+          <label class="field"><span>סיסמה</span><input type="password" id="password" dir="ltr" autocomplete="current-password"></label>
+          <div class="actions"><button class="btn primary" id="signin">התחברות</button></div>
+          <p class="note">הסיסמה נשלחת רק ל-Supabase ולא נשמרת. נשמרת רק ההתחברות של התוסף (באחסון המקומי של התוסף), עד "התנתק". התוסף רק קורא; סימון ✓ עובר דרך האתר.</p>
+        </div>
+        <p id="login-status" class="status"></p>
+      </fieldset>
+    </section>
+
+    <section class="card">
+      <h2>מה להציג</h2>
+      <label class="check"><input type="checkbox" data-show="today"> <span>היום: מה מוגש היום, הפעולה הבאה, השיעורים של היום</span></label>
+      <label class="check"><input type="checkbox" data-show="urgent"> <span>דחוף: באיחור ו-7 הימים הקרובים</span></label>
+      <label class="check"><input type="checkbox" data-show="exams"> <span>ספירה לאחור למבחנים</span></label>
+      <label class="check"><input type="checkbox" data-show="points"> <span>נקודות, רמה ויעד יומי (אם מערכת הנקודות פעילה באתר)</span></label>
+      <h2 style="margin-top:14px">אזכרות</h2>
+      <label class="check"><input type="checkbox" id="adhkar-notify"> <span>התראה כשמתחיל חלון אזכרות הבוקר/הערב והאתר סגור (פעם אחת לחלון, רק אם עוד לא הושלם, ולפי ההגדרות באתר). כשהאתר פתוח — הוא מציג את הכרטיס שלו.</span></label>
+    </section>
+
+    <section class="card">
+      <h2>פרטיות</h2>
+      <p class="note">במצב מקומי התוסף לא פונה לשום שרת. הוא לא קורא את האחסון של האתר: האתר עצמו שולח לו תמונה קטנה — שמות קורסים, כותרות ותאריכים של מטלות, מבחנים, שעות שיעור, סיכום נקודות וחלונות אזכרות. בלי הערות, בלי קישורים, בלי Moodle/iCal ובלי פרטי התחברות. במצב מחובר הוא פונה רק לפרויקט ה-Supabase שהזנת.</p>
+    </section>
+  </div>
+  <script src="lib/settings.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

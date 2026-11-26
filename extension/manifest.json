@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "מעקב קורסים",
+  "short_name": "קורסים",
+  "version": "1.0.0",
+  "description": "המטלות שלך, מה להיום, מבחנים קרובים ונקודות — בחלון קטן. מקומי כברירת מחדל: בלי חשבון ובלי שרת.",
+  "minimum_chrome_version": "116",
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "מעקב קורסים",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage", "alarms", "notifications"],
+  "host_permissions": ["https://mhdeamara.github.io/course-tracker/*"],
+  "optional_permissions": ["scripting"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "content_scripts": [
+    { "matches": ["https://mhdeamara.github.io/course-tracker/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ]
+}

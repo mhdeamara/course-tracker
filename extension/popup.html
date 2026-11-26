@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>מעקב קורסים</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <header class="top">
+    <img src="icons/icon-32.png" alt="" width="24" height="24">
+    <div class="top-t"><b>מעקב קורסים</b><span id="updated" class="muted small"></span></div>
+    <button id="refresh" class="icon" title="רענון מהענן" aria-label="רענון מהענן" hidden>⟳</button>
+    <button id="opts" class="icon" title="הגדרות" aria-label="הגדרות">⚙</button>
+  </header>
+  <main id="main" aria-live="polite"></main>
+  <footer class="bottom">
+    <button id="open" class="btn primary big">פתח את האתר</button>
+    <button id="five" class="btn" hidden>⏱ רק 5 דקות</button>
+  </footer>
+  <div id="msg" class="msg" role="status" hidden></div>
+  <script src="lib/view.js"></script>
+  <script src="lib/settings.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
