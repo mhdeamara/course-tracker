@@ -322,6 +322,7 @@
     S.subscribe(() => app.rerender());
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     if (CT.timer) CT.timer.init();
+    if (CT.focus) CT.focus.init();
     if (CT.views.ai) CT.views.ai.mountFab();
     app.rerender();
     // runs in the background; replaces data if the cloud is newer. Moodle auto-sync starts after it, on the final data.

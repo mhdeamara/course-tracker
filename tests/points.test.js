@@ -202,3 +202,30 @@ test('migration v2 → v3: old data gets a points ledger, existing progress is t
   assert.equal(g.earned(again), 12);
   assert.equal(g.reconcile(again, NOW).length, 0);
 });
+
+test('"רק 5 דקות": starting earns once per item per day, with a daily cap', () => {
+  const items = Array.from({ length: 7 }, (_, i) => item(`ש״ב ${i}`));
+  const st = fresh(state([['שיעורי בית', items]]));
+  const start = (it, d = '2026-11-26') => st.game.starts.push({ id: `s${++n}`, itemId: it.id, d, label: it.title });
+  start(items[0]); start(items[0]); start(items[0]);
+  assert.deepEqual(g.reconcile(st, NOW).map((e) => [e.t, e.p]), [['start', 3]], 'three starts of the same item today = one award');
+  items.slice(1).forEach((it) => start(it));
+  const added = g.reconcile(st, NOW);
+  assert.equal(sumP(added), 12, 'cap of 15 per day: 3 already + 12 more');
+  start(items[0], '2026-11-27');
+  assert.equal(g.reconcile(st, at(27))[0].p, 3, 'the same item again on another day');
+});
+
+test('subtasks: each one checked earns, unchecking or deleting takes it back', () => {
+  const a = item('ש״ב 1', { subs: [{ id: 'x', t: 'שאלה 1', done: false }, { id: 'y', t: 'שאלה 2', done: false }] });
+  const st = fresh(state([['שיעורי בית', [a]]]));
+  a.subs[0].done = true;
+  assert.deepEqual(g.reconcile(st, NOW).map((e) => [e.t, e.p, e.label]), [['sub', 2, 'שאלה 1']]);
+  a.subs[1].done = true; g.reconcile(st, NOW);
+  assert.equal(g.earned(st), 4);
+  a.subs[0].done = false; g.reconcile(st, NOW);
+  a.subs = a.subs.filter((s) => s.id !== 'y'); g.reconcile(st, NOW);
+  assert.equal(g.earned(st), 0);
+  a.subs[0].done = true; g.reconcile(st, NOW); g.reconcile(st, NOW);
+  assert.equal(g.earned(st), 2, 'no double');
+});

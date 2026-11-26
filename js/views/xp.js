@@ -122,7 +122,7 @@
   if (CT.views.dashboard) CT.views.dashboard.slots.side.push(V.cardHTML);
 
   /* ---------- "נקודות" page ---------- */
-  const TYPE_LABEL = { item: 'סיום פריט', review: 'צריך לחזור', study: 'זמן לימוד', note: 'הערה', course: 'סיום קורס', rev: 'ביטול' };
+  const TYPE_LABEL = { item: 'סיום פריט', review: 'צריך לחזור', study: 'זמן לימוד', note: 'הערה', course: 'סיום קורס', start: 'התחלה', sub: 'תת-משימה', rev: 'ביטול' };
 
   function rulesHTML(cfg) {
     const p = cfg.pts;
@@ -134,6 +134,8 @@
       ['הערה ראשונה על פריט', `+${p.note}`, `מ-${p.noteMinChars} תווים. עד ${cfg.caps.note} ביום. לא נלקח בחזרה.`],
       ['סגירת "צריך לחזור"', `+${p.review}`, ''],
       ['סיום קורס', `+${p.course}`, 'עם ציון, עובר או פטור.'],
+      ['"רק 5 דקות"', `+${p.start}`, `על עצם ההתחלה. פעם ביום לכל פריט, עד ${cfg.caps.start} ביום.`],
+      ['תת-משימה', `+${p.sub}`, `לכל צעד שמסמנים. עד ${cfg.caps.sub} ביום.`],
       ['מכפיל רצף', cfg.streak.map(([d, x]) => `<span class="nw">${d}+ ימים ×${x}</span>`).join(' '), 'על סיום פריטים. רצף = ימים רצופים עם נקודות.'],
     ];
     return `<table class="xp-rules"><tbody>${rows.map(([a, b, c]) => `<tr><th scope="row">${a}</th><td class="num">${b}</td><td class="muted small">${c}</td></tr>`).join('')}</tbody></table>

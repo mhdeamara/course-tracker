@@ -712,7 +712,7 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .sb-xp .xp-bar { height: 5px; background: var(--surface); }
 
 .xp-pop {
-  position: fixed; inset-inline: 0; bottom: 88px; margin-inline: auto; width: max-content; max-width: calc(100vw - 32px); z-index: 60;
+  position: fixed; inset-inline: 0; bottom: 88px; margin-inline: auto; width: max-content; max-width: calc(100vw - 32px); z-index: 92;
   display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--sp-2) var(--sp-5); border-radius: var(--r-pill);
   background: var(--surface); border: 1px solid color-mix(in srgb, var(--xp) 40%, var(--border)); box-shadow: var(--shadow-pop);
   pointer-events: none; opacity: 0; transform: translateY(12px) scale(.96);
@@ -772,6 +772,47 @@ body.is-dragging { cursor: grabbing; user-select: none; }
   .xp-p { grid-row: 1 / span 3; grid-column: 2; }
   .xp-hero { gap: var(--sp-3); }
   .xp-rules td.muted { display: none; }
+}
+
+/* ===== focus screen + subtasks ===== */
+.focus-screen { position: fixed; inset: 0; z-index: 78; display: grid; place-items: center; padding: var(--sp-4); overflow-y: auto; background: var(--bg); animation: fade-in var(--dur) var(--ease) both; }
+.focus-screen.out { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.fx-box { position: relative; width: min(560px, 100%); display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); text-align: center; }
+.fx-close { position: absolute; top: 0; inset-inline-end: 0; }
+.fx-course { margin: 0; display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
+.fx-course .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cl, var(--c)); }
+.fx-title { margin: 0; font-size: var(--fs-2xl); line-height: 1.3; overflow-wrap: anywhere; }
+.fx-clock { position: relative; width: 220px; height: 220px; margin: var(--sp-3) 0; }
+.fx-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.fx-ring circle { fill: none; stroke-width: 6; }
+.fx-ring-bg { stroke: var(--surface-2); }
+.fx-ring-fg { stroke: var(--cl, var(--c)); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.fx-time { position: absolute; inset: 0; display: grid; place-items: center; font-size: 3.2rem; font-weight: var(--fw-semi); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.fx-msg { margin: 0; min-height: 1.5em; font-size: var(--fs-md); }
+.fx-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.fx-subs { width: 100%; margin-top: var(--sp-4); text-align: start; border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.fx-subs summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); width: fit-content; border-radius: var(--r-xs); }
+.fx-subs summary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.fx-subs-body { margin-top: var(--sp-2); }
+.subs-count { margin: 0 0 var(--sp-2); }
+.subs-list { list-style: none; margin: 0 0 var(--sp-2); padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sub { display: flex; align-items: center; gap: var(--sp-2); padding: 2px var(--sp-1); border-radius: var(--r-sm); }
+.sub:hover { background: var(--surface-2); }
+.sub label { flex: 1; display: flex; align-items: center; gap: var(--sp-2); min-height: 36px; cursor: pointer; }
+.sub input { width: 18px; height: 18px; accent-color: var(--success); flex: none; }
+.sub.done span { color: var(--muted); text-decoration: line-through; }
+.sub .icon-btn { opacity: .5; }
+.sub:hover .icon-btn, .sub .icon-btn:focus-visible { opacity: 1; }
+.sub-add { display: flex; gap: var(--sp-2); }
+.sub-add input { flex: 1; min-width: 0; }
+.subs-chip { margin-inline-start: 6px; padding: 1px 8px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font: inherit; font-size: var(--fs-xs); cursor: pointer; font-variant-numeric: tabular-nums; }
+.subs-chip:hover { color: var(--text); border-color: var(--accent); }
+.subs-chip.all { color: var(--success); }
+@media (max-width: 640px) {
+  .fx-title { font-size: var(--fs-xl); }
+  .fx-clock { width: 180px; height: 180px; }
+  .fx-time { font-size: 2.6rem; }
+  .fx-btns .btn { flex: 1 1 auto; }
 }
 
 /* ===== "היום" — home screen ===== */

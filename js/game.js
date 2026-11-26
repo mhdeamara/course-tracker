@@ -26,13 +26,15 @@
       note: 3, noteMinChars: 20, // first note of at least `noteMinChars` characters on an item
       review: 5, // closing something that was marked "צריך לחזור"
       course: 100, // finishing a course (graded / pass / exemption)
+      start: 3, // "רק 5 דקות": starting is what counts (once per item per day)
+      sub: 2, // each subtask checked off
     },
-    caps: { item: 400, study: 60, note: 15 }, // most points per day for each kind
+    caps: { item: 400, study: 60, note: 15, start: 15, sub: 30 }, // most points per day for each kind
     streak: [[3, 1.1], [7, 1.2], [14, 1.3], [30, 1.5]], // [days in a row, multiplier] for finished items
   };
 
   /** Ledger entry types that count as earned XP (later stages add more: goals, badges…). */
-  g.EARN_TYPES = new Set(['item', 'review', 'study', 'note', 'course', 'rev']);
+  g.EARN_TYPES = new Set(['item', 'review', 'study', 'note', 'course', 'start', 'sub', 'rev']);
 
   g.LEVEL_NAMES = ['צעדים ראשונים', 'בתנופה', 'התמדה', 'קצב יציב', 'מיקוד', 'שיטתיות', 'עומק', 'שליטה', 'מצוינות', 'מומחיות', 'מאסטר', 'אגדה'];
 
@@ -80,6 +82,7 @@
         if (it.status === 'done') keys.push('item:' + it.id);
         if (it.status === 'done' && it.fromReview) keys.push('review:' + it.id);
         if (noteOk(it, cfg)) keys.push('note:' + it.id);
+        (it.subs || []).forEach((sb) => { if (sb.done) keys.push(`sub:${it.id}:${sb.id}`); });
       }));
     });
     (st.studyLog || []).forEach((e) => { if (e.id) keys.push('study:' + e.id); });
@@ -94,6 +97,7 @@
     if (!Array.isArray(gm.ledger)) gm.ledger = [];
     if (!Array.isArray(gm.base)) gm.base = [];
     if (!isObj(gm.cfg)) gm.cfg = {};
+    if (!Array.isArray(gm.starts)) gm.starts = []; // "רק 5 דקות" starts: { id, itemId, d, label }
     if (!gm.since) gm.since = new Date(now).toISOString();
     st.game = gm;
     if (fresh) gm.base = currentKeys(st, g.cfg(st));
@@ -212,7 +216,15 @@
           if (it.fromReview) want.set('review:' + it.id, () => award('review:' + it.id, 'review', cfg.pts.review, ['סגרת "צריך לחזור"'], it.title));
         }
         if (noteOk(it, cfg)) want.set('note:' + it.id, () => award('note:' + it.id, 'note', cfg.pts.note, ['הערה'], it.title));
+        (it.subs || []).forEach((sb) => {
+          const k = `sub:${it.id}:${sb.id}`;
+          if (sb.done) want.set(k, () => award(k, 'sub', cfg.pts.sub, ['תת-משימה'], sb.t || it.title));
+        });
       }));
+    });
+    (gm.starts || []).forEach((x) => { // one per item per day, however many times it is started
+      const k = `start:${x.itemId}:${x.d}`;
+      if (!want.has(k)) want.set(k, () => award(k, 'start', cfg.pts.start, ['רק 5 דקות'], x.label));
     });
     (st.studyLog || []).forEach((e) => {
       if (!e.id || !(e.minutes > 0)) return;

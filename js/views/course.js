@@ -161,6 +161,7 @@
             ${safeLink ? `<a class="row-link" href="${esc(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="פתח קישור" tabindex="-1">${icon.link}</a>` : ''}
             ${it.tags.map((t) => `<span class="tag" dir="auto">${esc(t)}</span>`).join('')}
             ${CT.views.moodle.badges(it)}
+            ${(it.subs || []).length ? `<button class="subs-chip${it.subs.every((s) => s.done) ? ' all' : ''}" data-action="subs" tabindex="-1" aria-label="תתי-משימות: ${it.subs.filter((s) => s.done).length} מתוך ${it.subs.length}">☑ ${it.subs.filter((s) => s.done).length}/${it.subs.length}</button>` : ''}
             ${it.note && !open ? `<div class="note-snippet" data-action="toggle-note" dir="auto">${icon.note}${esc(firstLine)}</div>` : ''}
           </div>
           <div class="row-tools">
@@ -215,6 +216,7 @@
         case 'toggle': S.toggleDone(id); break;
         case 'toggle-note': toggleNote(id); break;
         case 'flag': toggleFlag(id); break;
+        case 'subs': if (CT.focus) CT.focus.openSubs(id); break;
         case 'status-menu': ui.statusMenu(a, id); break;
         case 'edit-due': editDue(id); break;
         case 'row-menu': rowMenu(a, id); break;
@@ -423,6 +425,9 @@
     const others = f.course.categories.filter((c) => c !== f.cat);
     ui.menu(anchor, [
       { label: 'פרטים ועריכה', icon: 'edit', hint: 'E', fn: () => V.itemDetails(id) },
+      CT.focus && f.item.status !== 'done' && { label: 'רק 5 דקות', icon: 'timer', fn: () => CT.focus.start(id, 5) },
+      CT.focus && f.item.status !== 'done' && { label: 'מצב מיקוד (פומודורו)', icon: 'timer', fn: () => CT.focus.start(id, S.state.settings.pomodoro.work || 25) },
+      CT.focus && { label: 'תתי-משימות', icon: 'check', fn: () => CT.focus.openSubs(id) },
       { label: 'הזז למעלה', icon: 'up', hint: 'Alt+↑', fn: () => V.moveItem(id, -1) },
       { label: 'הזז למטה', icon: 'down', hint: 'Alt+↓', fn: () => V.moveItem(id, 1) },
       others.length && { label: 'העבר לקטגוריה…', icon: 'archive', fn: () => moveToCat(id) },
