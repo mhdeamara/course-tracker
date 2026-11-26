@@ -18,6 +18,7 @@
   /** Default values; state.game.cfg holds only the user's overrides. */
   g.DEFAULTS = {
     enabled: true,
+    extras: true, // goals, daily challenge and badges
     pts: {
       easy: 6, normal: 12, hard: 20, // finishing an item, by difficulty
       onTime: 5, // done on or before its due date
@@ -28,13 +29,20 @@
       course: 100, // finishing a course (graded / pass / exemption)
       start: 3, // "רק 5 דקות": starting is what counts (once per item per day)
       sub: 2, // each subtask checked off
+      goalDay: 15, goalWeek: 50, // reaching the daily / weekly goal
+      challenge: 10, // the daily challenge
+      badge: 10, // each new badge
     },
-    caps: { item: 400, study: 60, note: 15, start: 15, sub: 30 }, // most points per day for each kind
+    caps: { item: 400, study: 60, note: 15, start: 15, sub: 30 },
+    /** A goal is reached with items OR minutes; both together = a perfect day / week. */
+    goals: { day: { items: 2, minutes: 45 }, week: { items: 10, minutes: 300 } }, // most points per day for each kind
     streak: [[3, 1.1], [7, 1.2], [14, 1.3], [30, 1.5]], // [days in a row, multiplier] for finished items
   };
 
   /** Ledger entry types that count as earned XP (later stages add more: goals, badges…). */
-  g.EARN_TYPES = new Set(['item', 'review', 'study', 'note', 'course', 'start', 'sub', 'rev']);
+  g.EARN_TYPES = new Set(['item', 'review', 'study', 'note', 'course', 'start', 'sub', 'goal', 'chal', 'badge', 'rev']);
+  /** Keys that follow the state and are taken back when it changes. Notes, badges and redemptions stay. */
+  const REVERSIBLE = /^(item|review|study|course|start|sub):/;
 
   g.LEVEL_NAMES = ['צעדים ראשונים', 'בתנופה', 'התמדה', 'קצב יציב', 'מיקוד', 'שיטתיות', 'עומק', 'שליטה', 'מצוינות', 'מומחיות', 'מאסטר', 'אגדה'];
 
@@ -97,6 +105,8 @@
     if (!Array.isArray(gm.ledger)) gm.ledger = [];
     if (!Array.isArray(gm.base)) gm.base = [];
     if (!isObj(gm.cfg)) gm.cfg = {};
+    if (!Array.isArray(gm.prizes)) gm.prizes = []; // personal prizes: { id, name, cost }
+    if (!isObj(gm.look)) gm.look = {}; // chosen in-site rewards: { accent, frame, title, sound }
     if (!Array.isArray(gm.starts)) gm.starts = []; // "רק 5 דקות" starts: { id, itemId, d, label }
     if (!gm.since) gm.since = new Date(now).toISOString();
     st.game = gm;
@@ -163,13 +173,16 @@
     const diff = g.difficulty(item, cat);
     let p = cfg.pts[['easy', 'normal', 'hard'][diff - 1]];
     const why = [g.DIFF_LABELS[diff]];
+    const extra = { df: diff };
+    if (item.due && day > item.due) extra.lt = u.daysBetween(item.due, day);
     if (item.due && day <= item.due) {
+      extra.ot = 1;
       p += cfg.pts.onTime; why.push('בזמן');
       if (u.daysBetween(day, item.due) >= cfg.pts.earlyDays) { p += cfg.pts.early; why.push('מוקדם'); }
     }
     const mult = g.multiplier(cfg, streakDays);
     if (mult > 1) { p = Math.round(p * mult); why.push(`רצף ×${mult}`); }
-    return { p, why };
+    return { p, why, extra };
   };
 
   /**
@@ -188,16 +201,17 @@
     const day = g.dayKey(now);
     const added = [];
     const isActive = (k) => last.has(k) && last.get(k).t !== 'rev';
-    const push = (e) => { const x = Object.assign({ id: u.uid(), at, d: day }, e); L.push(x); last.set(x.k, x); net.set(x.k, (net.get(x.k) || 0) + x.p); added.push(x); };
+    const sem = (st.settings && st.settings.activeSemesterId) || '';
+    const push = (e) => { const x = Object.assign({ id: u.uid(), at, d: day, sem }, e); L.push(x); last.set(x.k, x); net.set(x.k, (net.get(x.k) || 0) + x.p); added.push(x); };
     const capped = (type, raw) => {
       const cap = cfg.caps[type];
       if (!(cap >= 0)) return { p: raw, capped: false };
       const room = Math.max(0, cap - usedToday(L, type, day));
       return { p: Math.min(raw, room), capped: raw > room };
     };
-    const award = (k, type, raw, why, label) => {
+    const award = (k, type, raw, why, label, extra) => {
       const c = capped(type, raw);
-      push({ k, t: type, p: c.p, why: c.capped ? why.concat('תקרה יומית') : why, label });
+      push(Object.assign({ k, t: type, p: c.p, why: c.capped ? why.concat('תקרה יומית') : why, label }, extra || {}));
     };
     const reverse = (k, label) => push({ k, t: 'rev', p: -(net.get(k) || 0), why: ['בוטל'], label });
     // Desired state: which keys should be active now.
@@ -209,10 +223,10 @@
     };
 
     st.courses.forEach((c) => {
-      if (eligibleCourse(c)) want.set('course:' + c.id, () => award('course:' + c.id, 'course', cfg.pts.course, ['סיום קורס'], c.name));
+      if (eligibleCourse(c)) want.set('course:' + c.id, () => award('course:' + c.id, 'course', cfg.pts.course, ['סיום קורס'], c.name, { cid: c.id }));
       c.categories.forEach((cat) => cat.items.forEach((it) => {
         if (it.status === 'done') {
-          want.set('item:' + it.id, () => { const r = g.itemPoints(cfg, it, cat, day, streakNow()); award('item:' + it.id, 'item', r.p, r.why, it.title); });
+          want.set('item:' + it.id, () => { const r = g.itemPoints(cfg, it, cat, day, streakNow()); award('item:' + it.id, 'item', r.p, r.why, it.title, Object.assign({ cat: cat.name }, r.extra)); });
           if (it.fromReview) want.set('review:' + it.id, () => award('review:' + it.id, 'review', cfg.pts.review, ['סגרת "צריך לחזור"'], it.title));
         }
         if (noteOk(it, cfg)) want.set('note:' + it.id, () => award('note:' + it.id, 'note', cfg.pts.note, ['הערה'], it.title));
@@ -228,12 +242,12 @@
     });
     (st.studyLog || []).forEach((e) => {
       if (!e.id || !(e.minutes > 0)) return;
-      want.set('study:' + e.id, () => award('study:' + e.id, 'study', Math.floor((e.minutes * cfg.pts.per10min) / 10), [u.fmtMinutes(e.minutes)], 'זמן לימוד'));
+      want.set('study:' + e.id, () => award('study:' + e.id, 'study', Math.floor((e.minutes * cfg.pts.per10min) / 10), [u.fmtMinutes(e.minutes)], 'זמן לימוד', { m: e.minutes }));
     });
 
     // Reverse what is active but no longer true (notes are never taken back once written).
     last.forEach((e, k) => {
-      if (e.t !== 'rev' && !want.has(k) && !k.startsWith('note:')) reverse(k, e.label);
+      if (e.t !== 'rev' && !want.has(k) && REVERSIBLE.test(k)) reverse(k, e.label);
     });
     // Award what is true but not active yet. Baseline keys never earn; a note earns once, ever.
     want.forEach((make, k) => {
@@ -241,7 +255,172 @@
       if (k.startsWith('note:') && last.has(k)) return;
       make();
     });
+
+    // Goals and the daily challenge: only today / this week are open; past days are settled.
+    if (cfg.extras === false) return added;
+    const flag = (k, on, type, pts, why, label) => {
+      if (on && !isActive(k)) award(k, type, pts, why, label);
+      else if (!on && isActive(k)) reverse(k, label);
+    };
+    const ds = g.dayStats(L, day), ws = g.weekStats(L, day);
+    const G = cfg.goals;
+    flag(`goal:d:${day}`, g.goalMet(ds, G.day), 'goal', cfg.pts.goalDay, ['יעד יומי'], 'יעד יומי');
+    flag(`goal:w:${u.weekStart(day)}`, g.goalMet(ws, G.week), 'goal', cfg.pts.goalWeek, ['יעד שבועי'], 'יעד שבועי');
+    const ch = g.challenge(day);
+    flag(`chal:${day}`, ch.test(ds), 'chal', cfg.pts.challenge, ['אתגר יומי'], ch.name);
+
+    // Badges: once earned, kept for good.
+    const ctx = g.badgeContext(st, cfg);
+    g.BADGES.forEach((b) => {
+      const k = 'badge:' + b.id;
+      if (!last.has(k) && b.test(ctx)) award(k, 'badge', cfg.pts.badge, ['הישג חדש'], b.name, { icon: b.icon });
+    });
     return added;
+  };
+
+  /* ---------- day / week numbers, goals, challenge ---------- */
+  /** Award entries that still count (not reversed later). */
+  g.activeEntries = (L) => {
+    const last = new Map();
+    L.forEach((e) => last.set(e.k, e));
+    return L.filter((e) => e.t !== 'rev' && g.EARN_TYPES.has(e.t) && last.get(e.k) === e);
+  };
+  const statsOf = (entries) => ({
+    items: entries.filter((e) => e.t === 'item').length,
+    hard: entries.filter((e) => e.t === 'item' && e.df === 3).length,
+    minutes: u.sum(entries.filter((e) => e.t === 'study'), (e) => e.m || 0),
+    notes: entries.filter((e) => e.t === 'note').length,
+    starts: entries.filter((e) => e.t === 'start').length,
+    subs: entries.filter((e) => e.t === 'sub').length,
+    reviews: entries.filter((e) => e.t === 'review').length,
+    late: entries.filter((e) => e.t === 'item' && e.lt > 0).length,
+    pomos: entries.filter((e) => e.t === 'study' && (e.m || 0) >= 20).length,
+  });
+  g.dayStats = (L, day) => statsOf(g.activeEntries(L).filter((e) => e.d === day));
+  g.weekStats = (L, day) => {
+    const from = u.weekStart(day), to = u.addDays(from, 6);
+    return statsOf(g.activeEntries(L).filter((e) => e.d >= from && e.d <= to));
+  };
+  g.goalMet = (s, goal) => s.items >= goal.items || s.minutes >= goal.minutes;
+  g.goalPerfect = (s, goal) => s.items >= goal.items && s.minutes >= goal.minutes;
+
+  /** One small challenge per day, the same all day (picked from the date). */
+  g.CHALLENGES = [
+    { id: 'three', name: 'לסיים 3 פריטים היום', test: (s) => s.items >= 3 },
+    { id: 'hard', name: 'לסיים פריט אחד קשה (ש״ב, מעבדה, פרויקט)', test: (s) => s.hard >= 1 },
+    { id: 'study30', name: 'ללמוד 30 דקות', test: (s) => s.minutes >= 30 },
+    { id: 'note', name: 'לכתוב הערה מסכמת על פריט', test: (s) => s.notes >= 1 },
+    { id: 'start', name: 'להתחיל משהו ב"רק 5 דקות"', test: (s) => s.starts >= 1 },
+    { id: 'subs', name: 'לסמן 3 תתי-משימות', test: (s) => s.subs >= 3 },
+  ];
+  g.challenge = (day) => {
+    let h = 0;
+    for (const ch of String(day)) h = (h * 31 + ch.charCodeAt(0)) % 9973;
+    return g.CHALLENGES[h % g.CHALLENGES.length];
+  };
+
+  /* ---------- badges ---------- */
+  /** Everything the badge rules look at, computed once from the ledger (and a little from the state). */
+  g.badgeContext = (st, cfg) => {
+    const L = st.game.ledger;
+    const A = g.activeEntries(L);
+    const byDay = new Map();
+    A.forEach((e) => { if (!byDay.has(e.d)) byDay.set(e.d, []); byDay.get(e.d).push(e); });
+    const perDay = [...byDay.entries()].map(([d, es]) => Object.assign({ d }, statsOf(es)));
+    const weeks = new Map();
+    A.forEach((e) => { const w = u.weekStart(e.d); if (!weeks.has(w)) weeks.set(w, []); weeks.get(w).push(e); });
+    const perWeek = [...weeks.values()].map(statsOf);
+    const days = [...new Set(L.filter((e) => e.p > 0 && e.t !== 'rev' && g.EARN_TYPES.has(e.t)).map((e) => e.d))].sort();
+    let maxStreak = 0, run = 0, maxGap = 0;
+    days.forEach((d, i) => {
+      const gap = i ? u.daysBetween(days[i - 1], d) : 1;
+      run = gap === 1 ? run + 1 : 1;
+      if (gap > maxGap) maxGap = gap;
+      maxStreak = Math.max(maxStreak, run);
+    });
+    const count = (t, f = () => true) => A.filter((e) => e.t === t && f(e)).length;
+    return { st, cfg, A, perDay, perWeek, maxStreak, maxGap, count, earned: g.earned(st) };
+  };
+
+  const COURSES_OF = (st, semId) => st.courses.filter((c) => c.semesterId === semId && c.kind !== 'record' && !c.archived);
+  /** All 25. `secret` ones show as "?" until earned. */
+  g.BADGES = [
+    { id: 'first', icon: '👣', name: 'צעד ראשון', desc: 'לסיים פריט ראשון', test: (c) => c.count('item') >= 1 },
+    { id: 'tutorial', icon: '✏️', name: 'תרגול ראשון', desc: 'לסיים תרגול', test: (c) => c.count('item', (e) => /תרגול|tutorial/i.test(`${e.cat || ''} ${e.label || ''}`)) >= 1 },
+    { id: 'streak3', icon: '🔥', name: '3 ימים ברצף', desc: '3 ימים רצופים עם נקודות', test: (c) => c.maxStreak >= 3 },
+    { id: 'streak7', icon: '🔥', name: 'שבוע ברצף', desc: '7 ימים רצופים עם נקודות', test: (c) => c.maxStreak >= 7 },
+    { id: 'streak14', icon: '🔥', name: 'שבועיים ברצף', desc: '14 ימים רצופים עם נקודות', test: (c) => c.maxStreak >= 14 },
+    { id: 'streak30', icon: '🌋', name: 'חודש ברצף', desc: '30 ימים רצופים עם נקודות', test: (c) => c.maxStreak >= 30 },
+    { id: 'clean-week', icon: '🧹', name: 'שבוע נקי', desc: 'שבוע עם 3 פריטים ומעלה, ואף אחד לא באיחור', test: (c) => c.perWeek.some((w) => w.items >= 3 && w.late === 0) },
+    { id: 'ten-day', icon: '🔟', name: 'עשר ביום', desc: 'לסיים 10 פריטים ביום אחד', test: (c) => c.perDay.some((d) => d.items >= 10) },
+    { id: 'hw5', icon: '📬', name: 'מגיש בזמן', desc: '5 פריטים קשים (ש״ב, מעבדות) שהושלמו בזמן', test: (c) => c.count('item', (e) => e.df === 3 && e.ot) >= 5 },
+    { id: 'early', icon: '🐦', name: 'ציפור מוקדמת', desc: 'לסיים משהו יומיים ויותר לפני הדדליין', test: (c) => c.count('item', (e) => (e.why || []).includes('מוקדם')) >= 1 },
+    { id: 'course', icon: '🎓', name: 'קורס מאחוריך', desc: 'לסיים קורס', test: (c) => c.count('course') >= 1 },
+    { id: 'grade90', icon: '🏆', name: '90 ומעלה', desc: 'לסיים קורס עם ציון 90 ומעלה', test: (c) => c.A.some((e) => e.t === 'course' && c.st.courses.some((x) => x.id === e.cid && x.outcome && x.outcome.type === 'graded' && Number(x.outcome.grade) >= 90)) },
+    { id: 'semester', icon: '🗓️', name: 'סמסטר סגור', desc: 'לסיים את כל הקורסים של סמסטר', test: (c) => (c.st.semesters || []).some((sm) => { const cs = COURSES_OF(c.st, sm.id); return cs.length > 0 && cs.every((x) => x.outcome && x.outcome.type) && c.A.some((e) => e.t === 'course' && cs.some((x) => x.id === e.cid)); }) },
+    { id: 'long', icon: '⏳', name: 'סשן ארוך', desc: 'סשן לימוד של 90 דקות ומעלה', test: (c) => c.count('study', (e) => (e.m || 0) >= 90) >= 1 },
+    { id: 'pomo5', icon: '🍅', name: 'צלף', desc: '5 סשנים של 20 דקות ומעלה ביום אחד', test: (c) => c.perDay.some((d) => d.pomos >= 5) },
+    { id: 'back', icon: '🌱', name: 'חזרה לעניינים', desc: 'לחזור לצבור נקודות אחרי שבוע הפסקה', secret: true, test: (c) => c.maxGap >= 8 },
+    { id: 'perfect-day', icon: '☀️', name: 'יום מושלם', desc: 'להשיג ביום אחד גם את יעד הפריטים וגם את יעד הזמן', test: (c) => c.perDay.some((d) => g.goalPerfect(d, c.cfg.goals.day)) },
+    { id: 'perfect-week', icon: '🌈', name: 'שבוע מושלם', desc: 'להשיג בשבוע אחד גם את יעד הפריטים וגם את יעד הזמן', test: (c) => c.perWeek.some((w) => g.goalPerfect(w, c.cfg.goals.week)) },
+    { id: 'five10', icon: '⏱️', name: 'רק 5 דקות ×10', desc: 'להתחיל 10 פעמים ב"רק 5 דקות"', test: (c) => c.count('start') >= 10 },
+    { id: 'review-zero', icon: '🔁', name: 'אין מה לחזור', desc: 'לסגור "צריך לחזור" עד שלא נשאר אף אחד', test: (c) => c.count('review') >= 1 && !c.st.courses.some((x) => !x.archived && x.categories.some((k) => k.items.some((i) => i.status === 'review'))) },
+    { id: 'writer', icon: '📝', name: 'כותב', desc: '10 הערות על פריטים', test: (c) => c.count('note') >= 10 },
+    { id: 'split', icon: '🧩', name: 'פירקתי את זה', desc: 'לסמן תת-משימה ראשונה', test: (c) => c.count('sub') >= 1 },
+    { id: 'night', icon: '🦉', name: 'ינשוף לילה', desc: 'לסיים פריט בין חצות ל-4 לפנות בוקר', secret: true, test: (c) => c.A.some((e) => e.t === 'item' && new Date(e.at).getHours() < 4) },
+    { id: 'comeback', icon: '💪', name: 'קאמבק', desc: 'לסגור משהו שהיה באיחור של שבוע ויותר', secret: true, test: (c) => c.count('item', (e) => e.lt >= 7) >= 1 },
+    { id: 'k1', icon: '💎', name: 'מועדון האלף', desc: 'לצבור 1,000 נקודות', test: (c) => c.earned >= 1000 },
+  ];
+  g.badgesEarned = (st) => {
+    const out = new Map();
+    ((st.game && st.game.ledger) || []).forEach((e) => { if (e.t === 'badge') out.set(e.k.slice(6), e); });
+    return out;
+  };
+
+  /* ---------- seasons (one per semester) ---------- */
+  /** XP earned while a semester was the active one. The level and badges carry over; the season starts at 0. */
+  g.seasonXP = (st, semId) => Math.max(0, u.sum(((st.game && st.game.ledger) || []).filter((e) => e.sem === semId && g.EARN_TYPES.has(e.t)), (e) => e.p));
+
+  /* ---------- spending: personal prizes ---------- */
+  g.spent = (st) => -u.sum(((st.game && st.game.ledger) || []).filter((e) => e.t === 'redeem'), (e) => e.p);
+  g.penalties = (st) => -u.sum(((st.game && st.game.ledger) || []).filter((e) => e.t === 'pen'), (e) => e.p);
+  /** Points available to spend: earned − redeemed − deductions, never below 0. */
+  g.balance = (st) => Math.max(0, g.earned(st) - g.spent(st) - g.penalties(st));
+  /** Redeems a personal prize (logged for good, never refunded). Returns the entry, or null if not enough points. */
+  g.redeem = (st, prizeId, now = new Date()) => {
+    const pr = (st.game.prizes || []).find((x) => x.id === prizeId);
+    if (!pr || !(pr.cost > 0) || g.balance(st) < pr.cost) return null;
+    const e = { id: u.uid(), k: 'redeem:' + u.uid(), t: 'redeem', p: -pr.cost, at: new Date(now).toISOString(), d: g.dayKey(now), sem: (st.settings && st.settings.activeSemesterId) || '', why: ['מימוש פרס'], label: pr.name };
+    st.game.ledger.push(e);
+    return e;
+  };
+
+  /** Final entries (redemptions, deductions) survive an undo: copied from the state being left into the restored one. */
+  g.FINAL_TYPES = new Set(['redeem', 'pen']);
+  g.carry = (from, to) => {
+    if (!from || !from.game || !to) return;
+    const gm = g.ensure(to);
+    const have = new Set(gm.ledger.map((e) => e.id));
+    from.game.ledger.forEach((e) => { if (g.FINAL_TYPES.has(e.t) && !have.has(e.id)) gm.ledger.push(e); });
+  };
+
+  /* ---------- in-site rewards, unlocked by level (spending nothing) ---------- */
+  g.UNLOCKS = [
+    { id: 'accent:teal', kind: 'accent', value: 'teal', name: 'צבע: טורקיז', level: 2 },
+    { id: 'frame:dashed', kind: 'frame', value: 'dashed', name: 'מסגרת: מקווקו', level: 3 },
+    { id: 'sound:bell', kind: 'sound', value: 'bell', name: 'צליל: פעמון', level: 3 },
+    { id: 'accent:rose', kind: 'accent', value: 'rose', name: 'צבע: ורוד', level: 4 },
+    { id: 'frame:double', kind: 'frame', value: 'double', name: 'מסגרת: כפולה', level: 5 },
+    { id: 'accent:amber', kind: 'accent', value: 'amber', name: 'צבע: ענבר', level: 6 },
+    { id: 'sound:xylo', kind: 'sound', value: 'xylo', name: 'צליל: קסילופון', level: 6 },
+    { id: 'frame:glow', kind: 'frame', value: 'glow', name: 'מסגרת: זוהרת', level: 7 },
+    { id: 'accent:forest', kind: 'accent', value: 'forest', name: 'צבע: ירוק יער', level: 8 },
+    { id: 'frame:gold', kind: 'frame', value: 'gold', name: 'מסגרת: זהב', level: 10 },
+  ];
+  /** Titles: the name of any level reached. */
+  g.titles = (st) => {
+    const n = g.levelOf(g.levelXP(st)).n;
+    return Array.from({ length: n }, (_, i) => g.levelName(i + 1));
   };
 
   /** reconcile() + level before/after, for feedback. Returns null when nothing changed. */

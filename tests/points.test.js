@@ -17,7 +17,8 @@ const state = (cats, extra = {}) => Object.assign({
   studyLog: [],
 }, extra);
 const sumP = (entries) => entries.reduce((s, e) => s + e.p, 0);
-const fresh = (st, when = at(20)) => { g.ensure(st, when); return st; }; // points system started a few days ago
+// points system started a few days ago; goals / challenge / badges off unless a test turns them on
+const fresh = (st, when = at(20)) => { g.ensure(st, when); st.game.cfg.extras = false; return st; };
 
 test('day boundary is 04:00', () => {
   assert.equal(g.dayKey(new Date(2026, 10, 26, 3, 59)), '2026-11-25');
@@ -72,6 +73,7 @@ test('baseline: things done before the points system started never earn', () => 
   const old = item('הרצאה 1', { status: 'done', note: 'הערה ארוכה מספיק כדי להיחשב כהערה' });
   const st = state([['הרצאות', [old]]], { studyLog: [{ id: 's1', courseId: 'c1', date: '2026-11-01', minutes: 60 }] });
   g.ensure(st, at(20));
+  st.game.cfg.extras = false;
   assert.equal(g.reconcile(st, NOW).length, 0);
   old.status = 'todo'; g.reconcile(st, NOW);
   old.status = 'done';
@@ -173,7 +175,7 @@ test('difficulty: automatic from category/title, manual override wins; disabled 
   assert.equal(g.difficulty({ title: 'ש״ב 3', diff: 1 }, { name: 'שיעורי בית' }), 1);
   const a = item('הרצאה 1');
   const st = fresh(state([['הרצאות', [a]]]));
-  st.game.cfg = { enabled: false, pts: { normal: 99 } };
+  st.game.cfg = { enabled: false, extras: false, pts: { normal: 99 } };
   a.status = 'done';
   assert.equal(g.reconcile(st, NOW).length, 0);
   st.game.cfg.enabled = true;
@@ -193,6 +195,7 @@ test('migration v2 → v3: old data gets a points ledger, existing progress is t
   const st = M.migrate(JSON.parse(JSON.stringify(v2)));
   assert.equal(st.version, 3);
   assert.deepEqual(st.game.ledger, []);
+  st.game.cfg.extras = false;
   assert.ok(st.game.base.includes('item:a') && st.game.base.includes('study:s1'));
   assert.equal(g.reconcile(st, NOW).length, 0, 'nothing old earns');
   st.courses[0].categories[0].items[1].status = 'done';
@@ -228,4 +231,129 @@ test('subtasks: each one checked earns, unchecking or deleting takes it back', (
   assert.equal(g.earned(st), 0);
   a.subs[0].done = true; g.reconcile(st, NOW); g.reconcile(st, NOW);
   assert.equal(g.earned(st), 2, 'no double');
+});
+
+/* ---------- goals, challenge, badges, prizes, seasons ---------- */
+const withExtras = (st) => { st.game.cfg.extras = true; return st; };
+const ofType = (added, t) => added.filter((e) => e.t === t);
+
+test('daily goal: reached with 2 items (or 45 min), taken back the same day if undone; past days stay', () => {
+  const [a, b] = [item('הרצאה 1'), item('הרצאה 2')];
+  const st = withExtras(fresh(state([['הרצאות', [a, b]]])));
+  a.status = 'done';
+  assert.equal(ofType(g.reconcile(st, NOW), 'goal').length, 0);
+  b.status = 'done';
+  const goal = ofType(g.reconcile(st, NOW), 'goal');
+  assert.deepEqual(goal.map((e) => [e.k, e.p]), [['goal:d:2026-11-26', 15]]);
+  b.status = 'todo';
+  assert.ok(g.reconcile(st, NOW).some((e) => e.t === 'rev' && e.k === 'goal:d:2026-11-26'));
+  b.status = 'done'; g.reconcile(st, NOW);
+  // next day: yesterday's goal is settled even if yesterday's item is unchecked
+  b.status = 'todo';
+  const next = g.reconcile(st, at(27));
+  assert.ok(!next.some((e) => e.k === 'goal:d:2026-11-26'));
+});
+
+test('weekly goal by minutes; perfect day needs both items and minutes', () => {
+  const st = withExtras(fresh(state([['הרצאות', []]])));
+  st.game.cfg.caps = { study: 1000 };
+  st.studyLog.push({ id: 'w1', date: '2026-11-26', minutes: 300 });
+  const added = g.reconcile(st, NOW);
+  assert.ok(added.some((e) => e.k === 'goal:w:2026-11-22' && e.p === 50), 'week starts on Sunday 22/11');
+  assert.ok(added.some((e) => e.k === 'goal:d:2026-11-26'));
+  assert.ok(!g.badgesEarned(st).has('perfect-day'), 'minutes alone are not a perfect day');
+  const items = [item('a'), item('b')];
+  st.courses[0].categories[0].items.push(...items);
+  items.forEach((i) => { i.status = 'done'; });
+  g.reconcile(st, NOW);
+  assert.ok(g.badgesEarned(st).has('perfect-day'));
+});
+
+test('daily challenge: same one all day, earned once', () => {
+  assert.equal(g.challenge('2026-11-26').id, g.challenge('2026-11-26').id);
+  const ids = new Set(Array.from({ length: 30 }, (_, i) => g.challenge(`2026-12-${String(i + 1).padStart(2, '0')}`).id));
+  assert.ok(ids.size >= 4, 'it varies across days');
+  const st = withExtras(fresh(state([['שיעורי בית', [item('ש״ב 1'), item('ש״ב 2'), item('ש״ב 3')]]])));
+  const day = ['2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30'].find((d) => g.challenge(d).id === 'three' || g.challenge(d).id === 'hard');
+  assert.ok(day, 'one of these days has an item challenge');
+  const when = at(Number(day.slice(8)));
+  st.courses[0].categories[0].items.forEach((i) => { i.status = 'done'; });
+  const chal = ofType(g.reconcile(st, when), 'chal');
+  assert.equal(chal.length, 1);
+  assert.equal(chal[0].p, 10);
+  assert.equal(ofType(g.reconcile(st, when), 'chal').length, 0);
+});
+
+test('badges: earned once, kept even when the reason is undone; secret ones too', () => {
+  const a = item('תרגול 1', { due: '2026-11-10' });
+  const st = withExtras(fresh(state([['תרגולים', [a]]])));
+  a.status = 'done';
+  const night = new Date(2026, 10, 27, 2, 30); // 02:30 → still the 26th's day, and a night owl
+  const earned = ofType(g.reconcile(st, night), 'badge').map((e) => e.label).sort();
+  assert.deepEqual(earned, ['ינשוף לילה', 'צעד ראשון', 'קאמבק', 'תרגול ראשון'].sort());
+  a.status = 'todo'; g.reconcile(st, NOW);
+  assert.equal(g.badgesEarned(st).size, 4, 'badges stay');
+  a.status = 'done';
+  assert.equal(ofType(g.reconcile(st, NOW), 'badge').length, 0, 'never twice');
+  assert.equal(g.BADGES.length, 25);
+  assert.equal(new Set(g.BADGES.map((b) => b.id)).size, 25);
+  assert.deepEqual(g.BADGES.filter((b) => b.secret).map((b) => b.id).sort(), ['back', 'comeback', 'night']);
+});
+
+test('badges: streak, back after a break, thousand-point club', () => {
+  const items = Array.from({ length: 4 }, (_, i) => item(`הרצאה ${i}`));
+  const st = withExtras(fresh(state([['הרצאות', items]]), at(1)));
+  [2, 3, 4].forEach((d, i) => { items[i].status = 'done'; g.reconcile(st, at(d)); });
+  assert.ok(g.badgesEarned(st).has('streak3'));
+  assert.ok(!g.badgesEarned(st).has('back'));
+  items[3].status = 'done'; g.reconcile(st, at(20)); // 16 days later
+  assert.ok(g.badgesEarned(st).has('back'));
+  st.game.cfg.pts = { course: 1000 };
+  st.courses[0].outcome = { type: 'graded', grade: 95 };
+  st.courses[0].semesterId = 'sem1';
+  st.semesters = [{ id: 'sem1' }];
+  g.reconcile(st, at(21));
+  ['course', 'grade90', 'semester', 'k1'].forEach((b) => assert.ok(g.badgesEarned(st).has(b), b));
+});
+
+test('prizes: redeem needs enough points, is logged and never refunded; level unaffected', () => {
+  const items = Array.from({ length: 3 }, (_, i) => item(`ש״ב ${i}`));
+  const st = fresh(state([['שיעורי בית', items]]));
+  items.forEach((i) => { i.status = 'done'; });
+  g.reconcile(st, NOW); // 60
+  st.game.prizes.push({ id: 'p1', name: 'פיצה', cost: 50 }, { id: 'p2', name: 'סרט', cost: 100 });
+  assert.equal(g.redeem(st, 'p2', NOW), null, 'not enough');
+  const e = g.redeem(st, 'p1', NOW);
+  assert.equal(e.p, -50);
+  assert.equal(g.balance(st), 10);
+  assert.equal(g.earned(st), 60, 'earned and level are not reduced by spending');
+  assert.equal(g.reconcile(st, NOW).length, 0, 'reconcile never refunds');
+  assert.equal(g.redeem(st, 'p1', NOW), null);
+});
+
+test('undo never refunds a redemption: restoring an older snapshot keeps it', () => {
+  const items = Array.from({ length: 3 }, (_, i) => item(`ש״ב ${i}`));
+  const st = fresh(state([['שיעורי בית', items]]));
+  items.forEach((i) => { i.status = 'done'; });
+  g.reconcile(st, NOW);
+  st.game.prizes.push({ id: 'p1', name: 'פיצה', cost: 50 });
+  const before = JSON.parse(JSON.stringify(st)); // what store.undo() would restore
+  g.redeem(st, 'p1', NOW);
+  g.carry(st, before);
+  assert.equal(g.balance(before), 10);
+  g.carry(st, before);
+  assert.equal(before.game.ledger.filter((e) => e.t === 'redeem').length, 1, 'carried once');
+});
+
+test('seasons: XP per semester; level and badges carry over', () => {
+  const [a, b] = [item('ש״ב 1'), item('ש״ב 2')];
+  const st = withExtras(fresh(state([['שיעורי בית', [a, b]]], { settings: { activeSemesterId: 'A' } })));
+  a.status = 'done'; g.reconcile(st, NOW);
+  st.settings.activeSemesterId = 'B';
+  b.status = 'done'; g.reconcile(st, NOW);
+  assert.equal(g.seasonXP(st, 'A'), 20 + 10); // the item + the "צעד ראשון" badge, earned while A was active
+  assert.ok(g.seasonXP(st, 'B') >= 20);
+  assert.equal(g.seasonXP(st, 'A') + g.seasonXP(st, 'B'), g.earned(st));
+  assert.deepEqual(g.titles(st), ['צעדים ראשונים']);
+  assert.ok(g.UNLOCKS.every((x) => x.level >= 2));
 });

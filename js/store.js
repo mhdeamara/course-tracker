@@ -73,7 +73,9 @@
   s.undo = () => {
     const e = s.undoStack.pop();
     if (!e) { CT.ui.toast('אין פעולה לביטול'); return; }
+    const cur = s.state;
     s.state = JSON.parse(e.snap);
+    if (CT.game && CT.game.carry) CT.game.carry(cur, s.state); // redemptions are final: undo never refunds them
     s.lastCoalesce = null;
     s.persist();
     s.emit();
