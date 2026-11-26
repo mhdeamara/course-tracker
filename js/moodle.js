@@ -19,7 +19,27 @@
   const Mo = {};
   const HW_NAME = 'שיעורי בית';
 
-  Mo.emptyState = () => ({ map: {}, uidMap: {}, ignored: {}, known: {}, inbox: [], last: null });
+  // auto: sync on opening the site; periodic: also every hour while it is open; lastLink: last sync through the link;
+  // linkError: { code, message, at } from the last failed link sync (shown until a sync succeeds). Never the link itself.
+  Mo.emptyState = () => ({ map: {}, uidMap: {}, ignored: {}, known: {}, inbox: [], last: null, auto: true, periodic: true, lastLink: null, linkError: null });
+
+  /* ---------- the calendar link (same rules as the Edge Function and the SQL check) ---------- */
+  Mo.HOST_RE = /^moodle\d{0,2}\.technion\.ac\.il$/;
+  /** null when `raw` is a Technion Moodle calendar export link, else a Hebrew explanation. */
+  Mo.checkLink = (raw) => {
+    const s = String(raw || '').trim();
+    if (!s) return 'הדבק את הקישור מהמודל';
+    if (s.length > 600) return 'הקישור ארוך מדי';
+    let u;
+    try { u = new URL(s); } catch (e) { return 'זה לא נראה כמו קישור'; }
+    if (u.protocol !== 'https:' || u.port || u.username || u.password) return 'הקישור חייב להתחיל ב-https:// ולהיות של מודל הטכניון';
+    if (!Mo.HOST_RE.test(u.hostname)) return 'זה לא קישור של מודל הטכניון (moodle…technion.ac.il)';
+    if (u.pathname !== '/calendar/export_execute.php') return 'זה לא קישור ייצוא של לוח השנה. במודל: לוח שנה ← ייצוא לוח שנה ← קבל כתובת לוח שנה';
+    if (!u.searchParams.get('authtoken') || !u.searchParams.get('userid')) return 'בקישור חסרים חלקים (userid / authtoken). העתק אותו שוב במלואו';
+    return null;
+  };
+  /** Hide calendar-link secrets inside any text (used on backups, just in case a link was pasted into a note). */
+  Mo.redact = (text) => String(text).replace(/(authtoken=)[^&\s"'<>\\]+/gi, '$1***');
   Mo.ensure = (st) => {
     if (!st.moodle || typeof st.moodle !== 'object') st.moodle = {};
     const empty = Mo.emptyState();

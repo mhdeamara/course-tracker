@@ -186,6 +186,7 @@
       } else {
         await CT.cloud.signIn(email, pass);
       }
+      CT.views.moodle.resetFeed();
       ui.toast('מחובר — הסנכרון פעיל');
       CT.app.rerender();
     } catch (e) {
@@ -205,6 +206,7 @@
       case 'sign-out':
         if (!(await ui.confirm('להתנתק מהסנכרון במכשיר הזה? הנתונים נשארים גם כאן וגם בענן.', 'התנתק'))) return;
         await CT.cloud.signOut();
+        CT.views.moodle.resetFeed();
         CT.app.rerender();
         break;
       case 'export': CT.backup.exportFile(); break;
@@ -244,6 +246,7 @@
   function onChange(e) {
     const t = e.target;
     if (t.matches('[data-action=cat-year]')) { CT.views.catalog.setYear(t.value); return; }
+    if (t.dataset.moodlePref) { CT.views.moodle.onChange(t); return; }
     if (t.dataset.gpa) {
       const k = t.dataset.gpa;
       const v = t.type === 'checkbox' ? t.checked : (k === 'passGrade' || k === 'decimals') ? u.clamp(Number(t.value) || 0, 0, 100) : t.value;

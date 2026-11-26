@@ -26,7 +26,8 @@
     });
   };
 
-  b.serialize = () => JSON.stringify({ app: 'course-tracker', exportedAt: new Date().toISOString(), data: CT.store.state }, null, 2);
+  // The Moodle calendar link is never in the state; redact() only guards against a link pasted into a note by hand.
+  b.serialize = () => CT.moodle.redact(JSON.stringify({ app: 'course-tracker', exportedAt: new Date().toISOString(), data: CT.store.state }, null, 2));
 
   const markBackedUp = () => {
     CT.store.state.settings.lastBackup = new Date().toISOString();

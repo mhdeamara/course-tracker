@@ -68,6 +68,11 @@
         <button class="btn btn-small btn-primary" data-action="sync-now">פתור עכשיו</button></div>`);
     }
     const inboxN = S.state.moodle && S.state.moodle.inbox ? S.state.moodle.inbox.length : 0;
+    const linkErr = S.state.moodle && S.state.moodle.linkError;
+    if (linkErr) {
+      out.push(`<div class="banner banner-warn" role="status">⚠️ סנכרון המטלות ממודל נכשל: ${u.esc(linkErr.message)}
+        <a class="btn btn-small btn-primary" href="#/settings">להגדרות</a></div>`);
+    }
     if (inboxN) {
       out.push(`<div class="banner banner-info" role="status">📥 ${inboxN === 1 ? 'מטלה אחת ממודל מחכה' : `${inboxN} מטלות ממודל מחכות`} לשיוך לקורס.
         <button class="btn btn-small btn-primary" data-action="moodle-inbox">לשיוך</button></div>`);

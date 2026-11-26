@@ -287,6 +287,40 @@ test('placeholder "ש״ב 3": merge is suggested, never automatic; merging keeps
   assert.equal(ph.title, 'ש״ב 3'); // your title stays
 });
 
+/* ================= calendar link ================= */
+const GOOD = 'https://moodle26.technion.ac.il/calendar/export_execute.php?userid=12345&authtoken=abcdef0123&preset_what=all&preset_time=recentupcoming';
+
+test('link check: only Technion Moodle calendar export links', () => {
+  assert.equal(Mo.checkLink(GOOD), null);
+  assert.equal(Mo.checkLink(`  ${GOOD}  `), null);
+  assert.equal(Mo.checkLink(GOOD.replace('moodle26', 'moodle')), null);
+  const bad = [
+    '', 'not a url', GOOD.replace('https', 'http'),
+    GOOD.replace('moodle26.technion.ac.il', 'moodle26.technion.ac.il.evil.com'),
+    GOOD.replace('moodle26.technion.ac.il', 'evil.com'),
+    GOOD.replace('moodle26.technion.ac.il', 'moodle26.technion.ac.il:8443'),
+    GOOD.replace('https://', 'https://user:pw@'),
+    GOOD.replace('export_execute.php', 'export.php'),
+    GOOD.replace('authtoken=abcdef0123', 'authtoken='),
+    GOOD.replace('userid=12345&', ''),
+    GOOD + '&x=' + 'a'.repeat(600),
+  ];
+  bad.forEach((b) => assert.notEqual(Mo.checkLink(b), null, b));
+});
+
+test('redact hides the authtoken anywhere in a backup', () => {
+  const out = Mo.redact(JSON.stringify({ note: `my link ${GOOD}` }));
+  assert.ok(!out.includes('abcdef0123'));
+  assert.ok(out.includes('authtoken=***&preset_what=all'));
+  assert.equal(Mo.redact('nothing secret'), 'nothing secret');
+});
+
+test('sync preferences are on by default, and old data gains them without losing anything', () => {
+  const st = { courses: [], moodle: { map: { a: 'b' } } };
+  Mo.ensure(st);
+  assert.deepEqual([st.moodle.auto, st.moodle.periodic, st.moodle.lastLink, st.moodle.map.a], [true, true, null, 'b']);
+});
+
 test('summary text', () => {
   assert.equal(Mo.summary({ added: 2, updated: 1, restored: 0, gone: 0, unassigned: 3 }), '2 חדשות · 1 עודכנו · 3 לא משויכות');
   assert.equal(Mo.summary({}), 'אין שינויים');

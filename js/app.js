@@ -295,7 +295,8 @@
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     if (CT.timer) CT.timer.init();
     app.rerender();
-    if (CT.cloud) CT.cloud.init(); // runs in the background; replaces data if the cloud is newer
+    // runs in the background; replaces data if the cloud is newer. Moodle auto-sync starts after it, on the final data.
+    if (CT.cloud) Promise.resolve(CT.cloud.init()).catch(() => {}).then(() => CT.views.moodle.startAuto());
     // installable app + offline cache (only works over https / localhost, not file://)
     if ('serviceWorker' in navigator && /^https:|^http:\/\/(localhost|127\.0\.0\.1)/.test(location.href)) {
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));

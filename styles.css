@@ -850,3 +850,8 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .moodle-diff { border-collapse: collapse; width: 100%; margin: 6px 0; }
 .moodle-diff th, .moodle-diff td { text-align: start; padding: 4px 8px; border-bottom: 1px solid var(--border); }
 .moodle-result { margin: 0; padding-inline-start: 20px; }
+.moodle-link-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.moodle-link-input { flex: 1 1 260px; min-width: 0; font-family: ui-monospace, monospace; font-size: .8rem; }
+.moodle-secret { background: var(--warn-bg); padding: 8px 10px; border-radius: var(--radius-sm); }
+.moodle-error { color: var(--danger); }
+.moodle-prefs { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }

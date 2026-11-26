@@ -60,7 +60,8 @@
       const msg = (data && (data.msg || data.message || data.error_description || data.error)) || `HTTP ${res.status}`;
       const err = new Error(msg);
       err.status = res.status;
-      err.code = data && (data.error_code || data.code);
+      err.code = data && (data.error_code || data.code || data.error);
+      err.data = data && typeof data === 'object' ? data : null;
       throw err;
     }
     return data;
@@ -131,6 +132,22 @@
     saveMeta();
     setStatus(C.enabled ? 'signed-out' : 'off');
   }
+  /* ---------------- Moodle calendar link ----------------
+   * The link lives only in the moodle_feeds table (RLS: owner only). This device never keeps it: not in the state,
+   * not in localStorage, not in a backup. It is sent once when saved, and read back only as its host name. */
+  C.moodleFeed = async () => {
+    const rows = await api(`/rest/v1/moodle_feeds?select=host,updated_at&user_id=eq.${auth.user.id}`);
+    return rows && rows[0] ? rows[0] : null;
+  };
+  C.saveMoodleLink = (url) => api('/rest/v1/moodle_feeds?on_conflict=user_id', {
+    method: 'POST',
+    body: { user_id: auth.user.id, url, updated_at: new Date().toISOString() },
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+  });
+  C.deleteMoodleLink = () => api(`/rest/v1/moodle_feeds?user_id=eq.${auth.user.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  /** The Edge Function fetches the calendar with the saved link and returns { ok, ics, events, host, fetchedAt }. */
+  C.fetchMoodle = () => api('/functions/v1/moodle-ical', { method: 'POST', body: {} });
+
   C.signOut = async () => {
     try { if (auth) await http('/auth/v1/logout', { method: 'POST', token: auth.access_token }); } catch (e) { /* ignore */ }
     signOutLocal();
