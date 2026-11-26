@@ -133,18 +133,15 @@
     setStatus(C.enabled ? 'signed-out' : 'off');
   }
   /* ---------------- Moodle calendar link ----------------
-   * The link lives only in the moodle_feeds table (RLS: owner only). This device never keeps it: not in the state,
-   * not in localStorage, not in a backup. It is sent once when saved, and read back only as its host name. */
+   * The link lives only in Supabase Vault (encrypted), reached through owner-only SQL functions (supabase/moodle.sql).
+   * This device never keeps it: not in the state, not in localStorage, not in a backup. It is sent once when saved,
+   * and read back only as its host name (moodle_feeds has no link in it). */
   C.moodleFeed = async () => {
     const rows = await api(`/rest/v1/moodle_feeds?select=host,updated_at&user_id=eq.${auth.user.id}`);
     return rows && rows[0] ? rows[0] : null;
   };
-  C.saveMoodleLink = (url) => api('/rest/v1/moodle_feeds?on_conflict=user_id', {
-    method: 'POST',
-    body: { user_id: auth.user.id, url, updated_at: new Date().toISOString() },
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-  });
-  C.deleteMoodleLink = () => api(`/rest/v1/moodle_feeds?user_id=eq.${auth.user.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  C.saveMoodleLink = (url) => api('/rest/v1/rpc/moodle_feed_set', { method: 'POST', body: { p_url: url } });
+  C.deleteMoodleLink = () => api('/rest/v1/rpc/moodle_feed_delete', { method: 'POST', body: {} });
   /** The Edge Function fetches the calendar with the saved link and returns { ok, ics, events, host, fetchedAt }. */
   C.fetchMoodle = () => api('/functions/v1/moodle-ical', { method: 'POST', body: {} });
   /** The AI Edge Function (supabase/functions/ai). The API key never reaches the browser. */

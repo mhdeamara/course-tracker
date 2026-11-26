@@ -136,7 +136,7 @@
   let busy = '';                      // 'check' | 'sync' | 'save' while a request runs
   let checked = null;                 // { events, list } from "בדוק קישור", so importing it needs no second fetch
   const C = () => CT.cloud;
-  const rerender = () => { if (location.hash === '#/settings') CT.app.rerender(); };
+  const rerender = () => { if (/^#\/(settings|moodle)\b/.test(location.hash)) CT.app.rerender(); };
   const TABLE_MISSING = /moodle_feeds|relation .* does not exist|schema cache|PGRST20[0-9]/i;
 
   async function loadFeed() {
@@ -169,7 +169,7 @@
         <li>לוחצים <b>קבל כתובת לוח שנה</b> (Get calendar URL), מעתיקים את הקישור ומדביקים כאן.</li>
       </ol>
       <p class="small moodle-secret">🔒 הקישור הוא <b>מפתח סודי</b>: מי שמחזיק בו רואה את לוח השנה שלך במודל. אל תשתף אותו ואל תדביק אותו בהערות.
-        הוא נשמר רק בחשבון שלך ב-Supabase (רק אתה יכול לקרוא אותו), לא במכשיר, לא בגיבוי ולא בקוד. אם הוא דלף — מפיקים חדש במודל, והישן מפסיק לעבוד.</p>
+        הוא נשמר מוצפן (Supabase Vault) בחשבון שלך בלבד, לא במכשיר, לא בגיבוי ולא בקוד. שים לב: את הקישור אי אפשר לבטל בעצמך במודל — ראה למטה.</p>
       <div class="moodle-link-row">
         <input class="moodle-link-input" type="url" inputmode="url" dir="ltr" autocomplete="off" autocapitalize="off" spellcheck="false"
           placeholder="https://moodle…technion.ac.il/calendar/export_execute.php?userid=…&amp;authtoken=…" aria-label="קישור לוח השנה של מודל">
@@ -188,6 +188,11 @@
           <button class="btn btn-ghost" data-action="moodle-edit-link">החלף קישור</button>
           <button class="btn btn-ghost btn-danger" data-action="moodle-disconnect">נתק</button>
         </div>
+        <details class="small moodle-revoke"><summary>איך מבטלים את הקישור גם בצד של מודל?</summary>
+        <p>"נתק" מוחק את הקישור מהחשבון שלך כאן (כולל מ-Vault). אבל הקישור עצמו ממשיך לעבוד במודל: המפתח שבו מחושב מהמשתמש שלך במודל,
+        ו"קבל כתובת לוח שנה" מחזיר שוב את אותו קישור — אין במודל כפתור שמבטל אותו.</p>
+        <p>אם הקישור דלף: פנה לתמיכת המודל של הטכניון ובקש לאפס את מפתח ייצוא לוח השנה של המשתמש שלך (זה דורש מנהל מערכת).
+        עד אז, מי שמחזיק בקישור יכול לראות רק את לוח השנה שלך (מועדים ושמות מטלות) — לא את הקורסים, הציונים או ההגשות.</p></details>
         ${checked ? `<p class="small">✅ הקישור תקין: ${checked.events} אירועים בלוח. <button class="btn btn-small" data-action="moodle-import-checked">ייבא אותם עכשיו</button></p>` : ''}
         <div class="moodle-prefs small">
           <label><input type="checkbox" data-moodle-pref="auto"${m.auto ? ' checked' : ''}> סנכרון אוטומטי בכל כניסה לאתר (אם עברו יותר מ-30 דקות)</label>
@@ -210,7 +215,7 @@
       throw err;
     }
     let parsed;
-    try { parsed = I.parse((res && res.ics) || ''); } catch (e) { throw Object.assign(new Error('מודל לא החזיר לוח שנה תקין. הפק קישור חדש במודל'), { code: 'link-rejected' }); }
+    try { parsed = I.parse((res && res.ics) || ''); } catch (e) { throw Object.assign(new Error('מודל לא החזיר לוח שנה תקין. העתק את הקישור שוב ממודל'), { code: 'link-rejected' }); }
     return { events: parsed.events };
   }
 
@@ -224,9 +229,9 @@
    * Sync through the saved link. manual: messages and the result dialog. Automatic: quiet — a toast only when
    * something changed, a lasting warning only for problems you must fix (an expired link).
    */
-  V.syncLink = async ({ manual = false, events = null } = {}) => {
+  V.syncLink = async ({ manual = false, events = null, inline = false } = {}) => {
     if (busy) return null;
-    if (manual) { busy = 'sync'; rerender(); } else busy = 'auto';
+    if (manual) { busy = 'sync'; rerender(); } else { busy = 'auto'; rerender(); }
     try {
       const evs = events || (await fetchEvents()).events;
       checked = null;
@@ -235,12 +240,12 @@
       if (!evs.length) {
         S.commit('', stamp, { undo: false, silent: !manual });
         if (manual) ui.toast('הלוח במודל ריק כרגע — אין אירועים בטווח הזמן של הקישור');
-      } else if (manual) {
+      } else if (manual && !inline) {
         r = V.importEvents(evs, 'link');
         S.commit('', stamp, { undo: false });
       } else {
-        r = S.commit('סנכרון אוטומטי ממודל', (st) => { const out = Mo.merge(st, evs, mergeOpts('link')); stamp(st); return out; });
-        if (r.added || r.updated || r.gone || r.unassigned) ui.toast(`מודל: ${Mo.summary(r)}`, { action: { label: 'בטל', fn: S.undo } });
+        r = S.commit(inline ? 'רענון ממודל' : 'סנכרון אוטומטי ממודל', (st) => { const out = Mo.merge(st, evs, mergeOpts('link')); stamp(st); return out; });
+        if (inline || r.added || r.updated || r.gone || r.unassigned) ui.toast(`מודל: ${Mo.summary(r)}`, { action: { label: 'בטל', fn: S.undo } });
       }
       return r;
     } catch (e) {
@@ -330,7 +335,7 @@
           checked = null;
           feed = { state: 'none' };
           setLinkError(null, false);
-          ui.toast('הקישור נמחק מהחשבון. מומלץ גם להפיק קישור חדש במודל, כדי שהישן יפסיק לעבוד');
+          ui.toast('הקישור נמחק מהחשבון שלך (גם מ-Vault). במודל עצמו הוא עדיין עובד — אם הוא דלף, בקש מתמיכת המודל לאפס אותו');
         } catch (e) { ui.toast(C().heMsg(e), { error: true }); }
         return;
       default: break;
@@ -408,6 +413,122 @@
       ],
     });
     return r;
+  };
+
+  /* ================= "המודל שלי" page ================= */
+  const page = { course: '', showDone: false };
+  const isDone = (it) => it.status === 'done';
+  const timeAgo = (iso) => {
+    const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (min < 1) return 'עכשיו';
+    if (min < 60) return `לפני ${min} דק׳`;
+    const h = Math.round(min / 60);
+    return h < 24 ? `לפני ${h} שע׳` : `לפני ${Math.round(h / 24)} ימים`;
+  };
+  /** Urgency bucket of an open item: overdue · today/tomorrow · this week · later · no date. */
+  const bucketOf = (it) => {
+    if (!it.due) return 'nodate';
+    const n = u.daysUntil(it.due);
+    return n < 0 ? 'overdue' : n <= 1 ? 'soon' : n <= 7 ? 'week' : 'later';
+  };
+  const BUCKETS = [
+    ['overdue', '🔴 באיחור'], ['soon', '⏰ היום ומחר'], ['week', '📅 בשבוע הקרוב'], ['later', 'בהמשך'], ['nodate', 'בלי תאריך'],
+  ];
+  const sortKey = (it) => `${it.due || '9999-99-99'} ${(it.source && it.source.dueTime) || '99:99'}`;
+
+  function pageRow({ item, course }) {
+    const s = item.source || {};
+    const done = isDone(item);
+    const n = item.due ? u.daysUntil(item.due) : null;
+    const cls = done ? 'done' : n == null ? '' : n < 0 ? 'overdue' : n <= 1 ? 'soon' : '';
+    const when = item.due ? `${u.fmtDateFull(item.due)}${s.dueTime ? ` · ${s.dueTime}` : ''}` : 'בלי תאריך';
+    return `<li class="${cls}" style="--c:${esc(course.color)}" data-id="${esc(item.id)}">
+      <button class="check check-sm" role="checkbox" aria-checked="${done}" data-action="mm-toggle" aria-label="${done ? 'בטל סימון' : 'סמן שהגשתי'}: ${esc(item.title)}">${icon.check}</button>
+      <a href="#/course/${course.id}?item=${item.id}" class="u-title"><span dir="auto">${esc(item.title)}</span>
+        <span class="muted small">${ui.courseDot(course)} ${esc(course.name)} · ${esc(when)}${done ? ' · <b>סימנתי שהגשתי</b>' : ''}</span>
+        <span class="mm-tags">${V.badges(item).replace(/<span class="tag moodle-tag"[^>]*>[^<]*<\/span>/, '')}</span></a>
+      <span class="u-when">${done ? '✓' : item.due ? u.relDays(item.due) : ''}</span>
+      ${item.link ? `<a class="icon-btn" href="${esc(item.link)}" target="_blank" rel="noopener noreferrer" title="פתח במודל" aria-label="פתח במודל">${icon.link}</a>` : ''}
+    </li>`;
+  }
+
+  V.render = (root) => {
+    const m = mo();
+    const cloud = C();
+    const connected = cloud && cloud.enabled && cloud.signedIn() && hasFlag();
+    const all = [...Mo.syncedItems(S.state).values()].filter(({ course }) => !course.archived);
+    const courses = [...new Map(all.map(({ course }) => [course.id, course])).values()].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    if (page.course && !courses.some((c) => c.id === page.course)) page.course = '';
+    const shown = all.filter(({ course }) => !page.course || course.id === page.course);
+    const open = shown.filter(({ item }) => !isDone(item)).sort((a, b) => sortKey(a.item).localeCompare(sortKey(b.item)));
+    const done = shown.filter(({ item }) => isDone(item)).sort((a, b) => sortKey(b.item).localeCompare(sortKey(a.item)));
+    const overdueN = open.filter(({ item }) => bucketOf(item) === 'overdue').length;
+    const last = m.last;
+    const lastAt = m.lastLink || (last && last.at);
+    const counts = last ? [last.added && `<b>${last.added}</b> חדשות`, last.updated && `<b>${last.updated}</b> עודכנו`, last.gone && `${last.gone} לא מופיעות יותר`].filter(Boolean).join(' · ') : '';
+    const status = `<p class="small mm-status">${lastAt ? `עודכן לאחרונה: <b>${esc(fmtWhen(lastAt))}</b> <span class="muted">(${esc(timeAgo(lastAt))}${last && last.source === 'file' && !m.lastLink ? ', מקובץ' : ''})</span>${counts ? ` · ברענון האחרון: ${counts}` : last ? ' · ברענון האחרון: אין שינויים' : ''}` : 'עוד לא עודכן ממודל.'}
+      ${busy === 'auto' ? ' · <span class="muted">מרענן ברקע…</span>' : ''}</p>`;
+    const err = m.linkError ? `<p class="small moodle-error" role="alert">⚠️ ${esc(m.linkError.message)} <a href="#/settings" data-action="mm-settings">להגדרות</a></p>` : '';
+    const how = connected ? '' : `<div class="card mm-connect"><p class="small">${cloud && cloud.enabled && cloud.signedIn()
+      ? 'עוד לא חיברת קישור לוח שנה של מודל. <a href="#/settings" data-action="mm-settings">לחיבור בהגדרות</a> — או ייבא קובץ ‎.ics‎ ידנית.'
+      : 'רענון אוטומטי דורש חשבון באתר וקישור לוח שנה של מודל (בהגדרות). בלי זה — ייבוא קובץ ‎.ics‎ ידני עובד תמיד.'}</p>
+      <button class="btn" data-action="mm-import">${icon.upload} ייבוא קובץ ‎.ics‎</button></div>`;
+    const groups = BUCKETS.map(([k, label]) => {
+      const rows = open.filter(({ item }) => bucketOf(item) === k);
+      return rows.length ? `<section class="card mm-group mm-${k}"><h2>${label} <span class="muted small">(${rows.length})</span></h2><ul class="urgent-list mm-list">${rows.map(pageRow).join('')}</ul></section>` : '';
+    }).join('');
+    const doneBox = page.showDone && done.length ? `<section class="card mm-group mm-done"><h2>✓ סימנתי שהגשתי <span class="muted small">(${done.length})</span></h2>
+      <p class="small muted">הסימון הוא שלך — לוח השנה של מודל לא מוסר סטטוס הגשה.</p><ul class="urgent-list mm-list">${done.map(pageRow).join('')}</ul></section>` : '';
+    root.innerHTML = `<div class="mymoodle">
+      <div class="section-head">
+        <h1>המודל שלי</h1>
+        <div class="toolbar-actions">
+          ${connected ? `<button class="btn btn-primary" data-action="mm-refresh"${busy ? ' disabled' : ''}>${icon.undo}<span>${busy === 'sync' ? 'מרענן…' : 'רענן'}</span></button>` : ''}
+          <a class="btn btn-ghost" href="#/settings" data-action="mm-settings">${icon.gear}<span>הגדרות</span></a>
+        </div>
+      </div>
+      ${status}${err}${how}
+      ${m.inbox.length ? `<p class="small moodle-error">${m.inbox.length} מטלות לא שויכו לקורס. <button class="btn btn-small" data-action="mm-inbox">לשיוך</button></p>` : ''}
+      <div class="mm-filters">
+        <label class="small">קורס: <select data-mm="course" class="chip-select"><option value="">כל הקורסים (${all.length})</option>${courses.map((c) => `<option value="${esc(c.id)}"${c.id === page.course ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="small"><input type="checkbox" data-mm="done"${page.showDone ? ' checked' : ''}> הצג גם מה שסימנתי שהגשתי (${done.length})</label>
+        <span class="small muted">${open.length} פתוחות${overdueN ? ` · <b class="mm-overdue-n">${overdueN} באיחור</b>` : ''}</span>
+      </div>
+      ${groups || (all.length ? ui.empty(page.course ? 'אין מטלות פתוחות בקורס הזה. 🎉' : 'אין מטלות פתוחות. 🎉') : ui.empty('עוד אין מטלות ממודל.'))}
+      ${doneBox}
+    </div>`;
+    const box = root.querySelector('.mymoodle');
+    box.addEventListener('click', onPageClick);
+    box.addEventListener('change', (e) => {
+      const k = e.target.dataset.mm;
+      if (k === 'course') page.course = e.target.value;
+      if (k === 'done') page.showDone = e.target.checked;
+      if (k) CT.app.rerender();
+    });
+  };
+
+  function onPageClick(e) {
+    const a = e.target.closest('[data-action]');
+    if (!a) return;
+    const act = a.dataset.action;
+    if (act === 'mm-settings') { e.preventDefault(); V.showSettings(); return; }
+    if (!act.startsWith('mm-') && !act.startsWith('moodle-')) return;
+    e.preventDefault();
+    const id = a.closest('[data-id]') && a.closest('[data-id]').dataset.id;
+    if (act === 'mm-refresh') V.syncLink({ manual: true, inline: true });
+    else if (act === 'mm-import') V.pickFile();
+    else if (act === 'mm-inbox') V.showInbox();
+    else if (act === 'mm-toggle') {
+      const was = isDone(S.findItem(id).item);
+      S.toggleDone(id);
+      ui.toast(was ? 'הסימון בוטל' : 'סומן שהגשת ✓', { action: { label: 'בטל', fn: S.undo } });
+    } else if (/^moodle-(changed|gone|merge)$/.test(act)) V.rowAction(act, id, a);
+  }
+
+  /** Go to the Moodle card in settings. */
+  V.showSettings = () => {
+    const go = () => { const el = document.getElementById('moodle'); if (el) el.scrollIntoView({ block: 'start' }); };
+    if (location.hash !== '#/settings') { location.hash = '#/settings'; setTimeout(go, 60); } else go();
   };
 
   /** Go to the settings card and scroll to the "לא משויך" list. */

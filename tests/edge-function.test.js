@@ -17,7 +17,7 @@ function net(o = {}) {
   const fn = async (url, init = {}) => {
     calls.push({ url, init });
     if (url.endsWith('/auth/v1/user')) return o.user || json({ id: 'user-1' });
-    if (url.includes('/rest/v1/moodle_feeds')) return o.feed || json(o.link === null ? [] : [{ url: o.link || LINK }]);
+    if (url.endsWith('/rpc/moodle_feed_get')) return o.feed || json(o.link === null ? null : (o.link || LINK));
     if (url.endsWith('/rpc/moodle_claim_fetch')) return o.claim || json(0);
     if (url.startsWith('https://moodle')) { if (o.moodle instanceof Error) throw o.moodle; return o.moodle || new Response(ICS, { status: 200 }); }
     throw new Error(`unexpected fetch ${url}`);
@@ -47,7 +47,7 @@ test('happy path: returns the calendar, never the link; the table is read with t
   assert.match(body.ics, /BEGIN:VCALENDAR/);
   assert.equal(res.headers.get('access-control-allow-origin'), 'https://mhdeamara.github.io');
   assert.equal(res.headers.get('cache-control'), 'no-store');
-  assert.equal(calls.find((c) => c.url.includes('moodle_feeds')).init.headers.Authorization, 'Bearer user-jwt');
+  assert.equal(calls.find((c) => c.url.includes('moodle_feed_get')).init.headers.Authorization, 'Bearer user-jwt');
   const moodle = calls.find((c) => c.url === LINK);
   assert.equal(moodle.init.redirect, 'manual');
   assert.ok(moodle.init.signal, 'has a timeout');
@@ -103,7 +103,7 @@ test('rate limit: says how long to wait, does not call Moodle', async () => {
 test('expired or regenerated link: redirect to login, an HTML error page, or 403', async () => {
   const a = await run({ moodle: new Response(null, { status: 303, headers: { location: 'https://moodle26.technion.ac.il/login/index.php' } }) });
   assert.equal(a.body.error, 'link-rejected');
-  assert.match(a.body.message, /הפק קישור חדש/);
+  assert.match(a.body.message, /העתק אותו שוב/);
   assert.equal((await run({ moodle: new Response('<html>Invalid authentication token</html>', { status: 200 }) })).body.error, 'link-rejected');
   assert.equal((await run({ moodle: new Response('nope', { status: 403 }) })).body.error, 'link-rejected');
 });
@@ -142,4 +142,25 @@ test('the function\'s link check agrees with the app\'s', () => {
   [LINK, LINK.replace('moodle26', 'evil'), LINK.replace('https', 'http'), LINK.replace('authtoken=SECRET123', 'authtoken=')]
     .forEach((l) => assert.equal(F.checkLink(l) === null, Mo.checkLink(l) === null, l));
   assert.equal(F.checkLink(42), 'bad-link');
+});
+
+// Static checks on the storage rules (supabase/moodle.sql cannot run here; these keep its guarantees from drifting).
+test('the link is stored only in Vault, through owner-only functions', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'moodle.sql'), 'utf8').replace(/--.*$/gm, '');
+  assert.match(sql, /vault\.create_secret\(/);
+  assert.match(sql, /drop column url/);
+  assert.doesNotMatch(sql, /create table if not exists public\.moodle_feeds \([^;]*\burl\b/, 'no plain url column');
+  for (const fn of ['moodle_feed_set', 'moodle_feed_get', 'moodle_feed_delete']) {
+    assert.match(sql, new RegExp(String.raw`function public\.${fn}\([^)]*\)[\s\S]*?security definer[\s\S]*?auth\.uid\(\)`), `${fn} checks auth.uid()`);
+    assert.match(sql, new RegExp(String.raw`revoke all on function public\.${fn}\([^)]*\)\s+from public, anon`), `${fn} not for anon`);
+  }
+  assert.match(sql, /revoke all on public\.moodle_feeds from anon, authenticated/);
+  assert.doesNotMatch(sql, /service_role/);
+  // the site saves and deletes, but never reads the decrypted link back
+  const js = ['cloud.js', 'views/moodle.js', 'moodle.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8')).join('\n');
+  assert.doesNotMatch(js, /moodle_feed_get/);
+  assert.match(js, /rpc\/moodle_feed_set/);
+  assert.match(js, /rpc\/moodle_feed_delete/);
 });

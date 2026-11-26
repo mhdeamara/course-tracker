@@ -904,3 +904,20 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
   .chat-panel { inset: 0; width: auto; height: auto; border-radius: 0; border: none; z-index: 85; }
 }
 @media print { .ai-fab, .chat-panel { display: none; } }
+
+/* ---------- "המודל שלי" ---------- */
+.mymoodle { display: flex; flex-direction: column; gap: 12px; }
+.mymoodle .section-head h1 { margin: 0; font-size: 1.4rem; }
+.mm-status { margin: 0; }
+.mm-filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.mm-group h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.mm-overdue { border-inline-start: 4px solid var(--danger); }
+.mm-overdue h2, .mm-overdue-n { color: var(--danger); }
+.mm-list li.done .u-title > span:first-child { text-decoration: line-through; color: var(--muted); }
+.mm-list .check[aria-checked="true"] { background: var(--accent); color: var(--accent-text); }
+.mm-tags:empty { display: none; }
+.mm-tags .tag { margin-inline-end: 4px; }
+.mm-connect { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.mm-connect p { margin: 0; }
+.moodle-revoke { margin: 8px 0; }
+.moodle-revoke p { margin: 6px 0; }

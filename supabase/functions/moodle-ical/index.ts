@@ -3,8 +3,8 @@
 // Why a server at all: the browser cannot read Moodle's export directly (CORS).
 // What it does, in order:
 //   1. Checks the caller's JWT with Supabase Auth (only signed-in users; the token decides whose link is read).
-//   2. Reads the caller's link from public.moodle_feeds with the caller's own token, so RLS applies
-//      (no service_role key is used anywhere).
+//   2. Reads the caller's link with the caller's own token through public.moodle_feed_get(), which decrypts it from
+//      Supabase Vault for auth.uid() only (no service_role key is used anywhere).
 //   3. Accepts only https://moodle<NN>.technion.ac.il/calendar/export_execute.php?… — never an open proxy, no SSRF:
 //      fixed host pattern, default port, no credentials in the URL, redirects are not followed.
 //   4. Rate limit: one Moodle fetch per user every 5 minutes (public.moodle_claim_fetch()).
@@ -23,8 +23,8 @@ export const MESSAGES: Record<string, string> = {
   'method': 'בקשה לא נתמכת',
   'not-signed-in': 'צריך להתחבר לאתר כדי לסנכרן מטלות ממודל',
   'no-link': 'עוד לא נשמר קישור לוח שנה של מודל. הדבק אותו בהגדרות',
-  'bad-link': 'הקישור לא תקין. הפק קישור חדש במודל (לוח שנה ← ייצוא לוח שנה ← קבל כתובת לוח שנה)',
-  'link-rejected': 'מודל דחה את הקישור — כנראה שהוא פג תוקף או הופק מחדש. הפק קישור חדש במודל והדבק אותו בהגדרות',
+  'bad-link': 'הקישור לא תקין. העתק אותו שוב במלואו ממודל (לוח שנה ← ייצוא לוח שנה ← קבל כתובת לוח שנה)',
+  'link-rejected': 'מודל דחה את הקישור. העתק אותו שוב במלואו ממודל (לוח שנה ← ייצוא לוח שנה ← קבל כתובת לוח שנה) והדבק אותו בהגדרות',
   'moodle-down': 'מודל לא זמין כרגע. נסה שוב מאוחר יותר',
   'timeout': 'מודל לא ענה תוך 10 שניות. נסה שוב מאוחר יותר',
   'too-big': 'הקובץ שמודל החזיר גדול מדי. בחר במודל טווח זמן קצר יותר והפק קישור חדש',
@@ -102,12 +102,13 @@ export async function handle(req: Request, env: Env, fetchFn: FetchFn = fetch): 
     const user = await who.json();
     if (!user || typeof user.id !== 'string') return fail(req, 401, 'not-signed-in');
 
-    // 2. their link, read under RLS with their own token
-    const rows = await fetchFn(`${env.url}/rest/v1/moodle_feeds?select=url&user_id=eq.${encodeURIComponent(user.id)}`, { headers: sb });
-    if (!rows.ok) return fail(req, 500, 'server');
-    const list = await rows.json();
-    const link = Array.isArray(list) && list[0] ? list[0].url : null;
-    if (!link) return fail(req, 404, 'no-link');
+    // 2. their link: decrypted from Vault by an owner-only SQL function, called with their own token
+    const got = await fetchFn(`${env.url}/rest/v1/rpc/moodle_feed_get`, {
+      method: 'POST', headers: { ...sb, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!got.ok) return fail(req, 500, 'server');
+    const link = await got.json();
+    if (typeof link !== 'string' || !link) return fail(req, 404, 'no-link');
 
     // 3. allowlist
     const bad = checkLink(link);

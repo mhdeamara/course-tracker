@@ -9,6 +9,7 @@
 
   const NAV = [
     ['', 'דשבורד', 'home'],
+    ['moodle', 'המודל שלי', 'download'],
     ['schedule', 'מערכת שעות', 'calendar'],
     ['review', 'חזרה למבחן', 'star'],
     ['catalog', 'תכנית לימודים', 'book'],
@@ -61,6 +62,7 @@
       semesters: () => views.semesters.render(main, { id, ...params }),
       grades: () => views.gpa.render(main, params),
       settings: () => views.settings.render(main, params),
+      moodle: () => views.moodle.render(main, params),
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
     const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
