@@ -29,6 +29,7 @@
       course: 100, // finishing a course (graded / pass / exemption)
       start: 3, // "רק 5 דקות": starting is what counts (once per item per day)
       sub: 2, // each subtask checked off
+      adk: 5, // adhkar morning / evening completed — only if linked in the adhkar settings (off by default)
       goalDay: 15, goalWeek: 50, // reaching the daily / weekly goal
       challenge: 10, // the daily challenge
       badge: 10, // each new badge
@@ -48,7 +49,7 @@
   };
 
   /** Ledger entry types that count as earned XP (later stages add more: goals, badges…). */
-  g.EARN_TYPES = new Set(['item', 'review', 'study', 'note', 'course', 'start', 'sub', 'goal', 'chal', 'badge', 'rev']);
+  g.EARN_TYPES = new Set(['item', 'review', 'study', 'note', 'course', 'start', 'sub', 'goal', 'chal', 'badge', 'rev', 'adk']);
   /** Keys that follow the state and are taken back when it changes. Notes, badges and redemptions stay. */
   const REVERSIBLE = /^(item|review|study|course|start|sub):/;
 
@@ -256,6 +257,11 @@
     (st.studyLog || []).forEach((e) => {
       if (!e.id || !(e.minutes > 0)) return;
       want.set('study:' + e.id, () => award('study:' + e.id, 'study', Math.floor((e.minutes * cfg.pts.per10min) / 10), [u.fmtMinutes(e.minutes)], 'זמן לימוד', { m: e.minutes }));
+    });
+
+    // Adhkar: only when the user linked them (off by default), from that day on; never a deduction.
+    if (CT.adhkar) CT.adhkar.pointKeys(st).forEach((x) => {
+      want.set(x.k, () => award(x.k, 'adk', cfg.pts.adk, [x.p === 'm' ? 'أذكار الصباح' : 'أذكار المساء'], 'אזכרות'));
     });
 
     // Reverse what is active but no longer true (notes are never taken back once written).

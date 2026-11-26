@@ -104,6 +104,8 @@
 
         ${CT.views.xp ? CT.views.xp.settingsHTML() : ''}
 
+        ${CT.views.adhkar ? CT.views.adhkar.settingsHTML() : ''}
+
         <section class="card">
           <h2>🧹 נתונים</h2>
           <div class="btn-row">

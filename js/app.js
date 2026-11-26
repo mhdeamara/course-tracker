@@ -17,6 +17,7 @@
     ['grades', 'ממוצע וציונים', 'award'],
     ['stats', 'סטטיסטיקות', 'chart'],
     ['archive', 'ארכיון', 'archive'],
+    ['adhkar', 'אזכרות', 'moon'],
     ['settings', 'הגדרות', 'gear'],
   ];
 
@@ -53,6 +54,7 @@
 
   /* ---------- router ---------- */
   const viewKey = (route) => (route === 'grades' ? 'gpa' : route); // route name → CT.views key
+  const navShown = ([r]) => r === '' || (CT.views[viewKey(r)] && (r !== 'adhkar' || (CT.adhkar && CT.adhkar.on(S.state))));
   const parseHash = () => {
     const h = location.hash.replace(/^#\/?/, '');
     const [path, query] = h.split('?');
@@ -79,6 +81,7 @@
       settings: () => views.settings.render(main, params),
       moodle: () => views.moodle.render(main, params),
       xp: () => views.xp.render(main, params),
+      adhkar: () => views.adhkar.render(main, params),
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
     const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
@@ -153,7 +156,7 @@
       <a href="#/" class="sb-brand"><span class="sb-logo" aria-hidden="true">📚</span><span>הקורסים שלי</span></a>
       ${CT.views.xp ? CT.views.xp.chipHTML() : ''}
       <nav class="sb-nav">
-        ${NAV.filter(([r]) => r === '' || CT.views[viewKey(r)]).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
+        ${NAV.filter(navShown).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
       </nav>
       <div class="sb-section">
         <div class="sb-title"><span>קורסים${S.semester(S.state.settings.activeSemesterId) ? ` · ${esc(S.semester(S.state.settings.activeSemesterId).name)}` : ''}</span><button class="icon-btn sb-add" data-sb="new" aria-label="קורס חדש" title="קורס חדש">${icon.plus}</button></div>
@@ -191,7 +194,7 @@
         </div>
       </div>
       <nav class="nav" aria-label="ניווט ראשי">
-        ${NAV.filter(([r]) => r === '' || CT.views[viewKey(r)]).map(([r, l, ic]) => `<a href="#/${r}" data-route="${r}">${icon[ic]}<span>${l}</span></a>`).join('')}
+        ${NAV.filter(navShown).map(([r, l, ic]) => `<a href="#/${r}" data-route="${r}">${icon[ic]}<span>${l}</span></a>`).join('')}
       </nav>`;
     document.getElementById('theme-btn').onclick = () => app.setTheme(isDark() ? 'light' : 'dark');
     document.getElementById('undo-btn').onclick = S.undo;
@@ -199,6 +202,7 @@
     bindSearch();
     applyTheme();
   }
+  app.renderHeader = () => { renderHeader(); app.rerender(); };
 
   /* ---------- global search ---------- */
   function searchAll(q) {
@@ -298,7 +302,7 @@
       if (typing) return; // native undo inside text fields
       e.preventDefault(); S.undo(); return;
     }
-    if (typing || e.ctrlKey || e.metaKey || document.querySelector('.modal-backdrop')) return;
+    if (typing || e.ctrlKey || e.metaKey || document.querySelector('.modal-backdrop') || document.body.classList.contains('adk-open')) return;
     const { route } = parseHash();
     if (Date.now() - gPending < 1200) {
       const dest = { d: '', 'ג': '', s: 'schedule', 'ד': 'schedule', r: 'review', 'ר': 'review', t: 'stats', 'א': 'stats' }[e.key];
@@ -323,6 +327,7 @@
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     if (CT.timer) CT.timer.init();
     if (CT.focus) CT.focus.init();
+    if (CT.views.adhkar) CT.views.adhkar.init();
     if (CT.views.ai) CT.views.ai.mountFab();
     app.rerender();
     // runs in the background; replaces data if the cloud is newer. Moodle auto-sync starts after it, on the final data.

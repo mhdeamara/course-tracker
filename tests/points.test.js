@@ -187,13 +187,13 @@ test('migration v2 → v3: old data gets a points ledger, existing progress is t
   require('../js/moodle.js');
   require('../js/model.js');
   const M = globalThis.CT.model;
-  assert.equal(M.VERSION, 3);
+  assert.equal(M.VERSION, 4); // 4 added state.adhkar (see adhkar.test.js)
   const v2 = {
     version: 2, semesters: [], studyLog: [{ id: 's1', courseId: 'c1', date: '2026-11-01', minutes: 50 }], settings: {},
     courses: [{ id: 'c1', name: 'קורס', categories: [{ id: 'k', name: 'הרצאות', items: [{ id: 'a', title: 'הרצאה 1', status: 'done' }, { id: 'b', title: 'הרצאה 2', status: 'todo' }] }] }],
   };
   const st = M.migrate(JSON.parse(JSON.stringify(v2)));
-  assert.equal(st.version, 3);
+  assert.equal(st.version, 4);
   assert.deepEqual(st.game.ledger, []);
   st.game.cfg.extras = false;
   assert.ok(st.game.base.includes('item:a') && st.game.base.includes('study:s1'));

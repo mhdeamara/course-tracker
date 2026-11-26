@@ -4,9 +4,9 @@
   const u = CT.u;
   const m = {};
 
-  m.VERSION = 3; // 2: semester year/term, course kind/outcome, GPA settings · 3: points ledger (state.game)
+  m.VERSION = 4; // 2: semester year/term, course kind/outcome, GPA settings · 3: points ledger (state.game) · 4: adhkar (state.adhkar)
   m.BACKUP_KEY = `ct.backup.pre-v${m.VERSION}`; // untouched copy of the data, saved right before upgrading to this version
-  m.OLD_BACKUP_KEYS = ['ct.backup.pre-v2'];
+  m.OLD_BACKUP_KEYS = ['ct.backup.pre-v3', 'ct.backup.pre-v2'];
 
   m.TERMS = { winter: 'חורף', spring: 'אביב', summer: 'קיץ' };
   m.TERM_ORDER = ['winter', 'spring', 'summer'];
@@ -139,6 +139,7 @@
     st.semesters.push(sem);
     st.settings.activeSemesterId = sem.id;
     if (CT.game) CT.game.ensure(st);
+    if (CT.adhkar) CT.adhkar.ensure(st);
     return st;
   };
 
@@ -192,6 +193,8 @@
     });
     // v3: points ledger. The first time, everything already done becomes the starting line (earns nothing).
     if (CT.game) CT.game.ensure(st);
+    // v4: adhkar settings and daily counters (st.adhkar). Nothing to convert: it starts empty.
+    if (CT.adhkar) { CT.adhkar.ensure(st); CT.adhkar.prune(st); }
     st.version = Math.max(m.VERSION, Number(data.version) || 0);
     return st;
   };

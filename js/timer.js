@@ -21,6 +21,8 @@
   const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${u.pad(Math.floor(s / 60))}:${u.pad(s % 60)}`; };
   const display = () => (t.mode === 'pomo' ? mmss(target() - elapsed()) : mmss(elapsed()));
   const active = () => t && (t.running || t.acc > 0);
+  /** True while the timer is counting (work or break) — reminders wait until it stops. */
+  T.busy = () => !!(t && t.running);
 
   T.log = (courseId, minutes, date = u.today()) => {
     minutes = Math.round(minutes);
