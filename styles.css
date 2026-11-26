@@ -855,3 +855,8 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .moodle-secret { background: var(--warn-bg); padding: 8px 10px; border-radius: var(--radius-sm); }
 .moodle-error { color: var(--danger); }
 .moodle-prefs { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+
+/* ---------- AI assistant ---------- */
+.ai-usage { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
+.ai-error { color: var(--danger); }
+.ai-card select { max-width: 100%; }

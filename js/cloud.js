@@ -147,6 +147,8 @@
   C.deleteMoodleLink = () => api(`/rest/v1/moodle_feeds?user_id=eq.${auth.user.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   /** The Edge Function fetches the calendar with the saved link and returns { ok, ics, events, host, fetchedAt }. */
   C.fetchMoodle = () => api('/functions/v1/moodle-ical', { method: 'POST', body: {} });
+  /** The AI Edge Function (supabase/functions/ai). The API key never reaches the browser. */
+  C.ai = (body) => api('/functions/v1/ai', { method: 'POST', body });
 
   C.signOut = async () => {
     try { if (auth) await http('/auth/v1/logout', { method: 'POST', token: auth.access_token }); } catch (e) { /* ignore */ }

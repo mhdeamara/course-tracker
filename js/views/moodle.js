@@ -204,7 +204,7 @@
       const d = e.data || {};
       const offline = e instanceof TypeError;
       const noFn = !d.error && (e.status === 404 || e.status === 400 && /not.?found|function/i.test(e.message || ''));
-      const err = new Error(d.message || (offline ? 'אין חיבור לאינטרנט — האתר ממשיך עם המטלות שסונכרנו לאחרונה'
+      const err = new Error((d.error && d.message) || (offline ? 'אין חיבור לאינטרנט — האתר ממשיך עם המטלות שסונכרנו לאחרונה'
         : noFn ? 'פונקציית הסנכרון (moodle-ical) עוד לא הותקנה ב-Supabase. ההוראות ב-README.' : C().heMsg(e)));
       err.code = d.error || (offline ? 'offline' : noFn ? 'no-function' : 'server');
       throw err;

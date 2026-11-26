@@ -125,6 +125,7 @@
       samplesRemoved: true,
       catalog: { faculty: 'ee', year: null }, // null = not chosen yet → newest catalog, with a warning
       gpa: Object.assign({}, m.DEFAULT_GPA),
+      ai: { extractModel: 'claude-sonnet-5-5', chatModel: 'claude-haiku-5-5' }, // model choice only; no keys here
     },
     moodle: CT.moodle.emptyState(), // Moodle sync bookkeeping (no secrets: the calendar link is never stored here)
     meta: { createdAt: new Date().toISOString(), updatedAt: null },

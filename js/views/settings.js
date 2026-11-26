@@ -45,6 +45,8 @@
 
         ${CT.views.moodle.section()}
 
+        ${CT.views.ai.section()}
+
         ${catalogSection()}
 
         ${gpaSection()}
@@ -187,6 +189,7 @@
         await CT.cloud.signIn(email, pass);
       }
       CT.views.moodle.resetFeed();
+      CT.views.ai.reset();
       ui.toast('מחובר — הסנכרון פעיל');
       CT.app.rerender();
     } catch (e) {
@@ -199,6 +202,7 @@
     const a = e.target.closest('[data-action]');
     if (!a) return;
     if (a.dataset.action.startsWith('moodle-')) { CT.views.moodle.onClick(a); return; }
+    if (a.dataset.action.startsWith('ai-')) { CT.views.ai.onClick(a); return; }
     const semId = a.closest('.sem-row') && a.closest('.sem-row').dataset.id;
     switch (a.dataset.action) {
       case 'signup': login('up', a.closest('form')); break;
@@ -207,6 +211,7 @@
         if (!(await ui.confirm('להתנתק מהסנכרון במכשיר הזה? הנתונים נשארים גם כאן וגם בענן.', 'התנתק'))) return;
         await CT.cloud.signOut();
         CT.views.moodle.resetFeed();
+        CT.views.ai.reset();
         CT.app.rerender();
         break;
       case 'export': CT.backup.exportFile(); break;
@@ -247,6 +252,7 @@
     const t = e.target;
     if (t.matches('[data-action=cat-year]')) { CT.views.catalog.setYear(t.value); return; }
     if (t.dataset.moodlePref) { CT.views.moodle.onChange(t); return; }
+    if (t.dataset.aiPref) { CT.views.ai.onChange(t); return; }
     if (t.dataset.gpa) {
       const k = t.dataset.gpa;
       const v = t.type === 'checkbox' ? t.checked : (k === 'passGrade' || k === 'decimals') ? u.clamp(Number(t.value) || 0, 0, 100) : t.value;
