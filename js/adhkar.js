@@ -9,7 +9,8 @@
 
   A.DEFAULTS = {
     enabled: true,
-    mode: 'manual', // 'manual' = the hours below · 'auto' = from prayer times (morning: Fajr → Dhuhr, evening: Asr → Isha)
+    mode: 'auto', // 'auto' = from prayer times (morning: Fajr → Dhuhr, evening: Asr → Isha) · 'manual' = the hours below
+    // (the hours below are also the fallback when the times can't be computed, e.g. 'custom' without coordinates)
     morning: { from: '04:30', to: '11:30' },
     evening: { from: '15:30', to: '20:30' },
     city: 'haifa', lat: null, lng: null, // lat/lng are used when city is 'custom'

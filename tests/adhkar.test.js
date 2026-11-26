@@ -16,8 +16,17 @@ const at = (h, m = 0, d = 26, mo = 10) => new Date(2026, mo, d, h, m); // 26 Nov
 const fresh = (cfg = {}) => { const st = { courses: [], studyLog: [] }; A.ensure(st); st.adhkar.cfg = cfg; return st; };
 
 /* ---------- time windows ---------- */
-test('manual windows: defaults 04:30–11:30 and 15:30–20:30, edges', () => {
+test('default is automatic: Haifa, Egyptian method, Shafii Asr', () => {
   const c = A.cfg(fresh());
+  assert.equal(c.mode, 'auto');
+  assert.equal(c.city, 'haifa');
+  assert.equal(c.method, 'egypt');
+  assert.equal(c.asr, 'shafii');
+  assert.equal(A.windows(c, at(12)).auto, true);
+});
+
+test('manual windows: 04:30–11:30 and 15:30–20:30, edges', () => {
+  const c = A.cfg(fresh({ mode: 'manual' }));
   assert.equal(A.period(c, at(4, 29)), null);
   assert.equal(A.period(c, at(4, 30)), 'm');
   assert.equal(A.period(c, at(11, 29)), 'm');
@@ -28,7 +37,7 @@ test('manual windows: defaults 04:30–11:30 and 15:30–20:30, edges', () => {
 });
 
 test('a window can wrap past midnight', () => {
-  const c = A.cfg(fresh({ evening: { from: '22:00', to: '01:00' } }));
+  const c = A.cfg(fresh({ mode: 'manual', evening: { from: '22:00', to: '01:00' } }));
   assert.equal(A.period(c, at(23, 0)), 'e');
   assert.equal(A.period(c, at(0, 30)), 'e');
   assert.equal(A.period(c, at(1, 0)), null);
