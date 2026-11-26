@@ -616,7 +616,8 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .sb-nav a:hover, .sb-course:hover { background: var(--surface-2); color: var(--text); }
 .sb-nav a, .sb-course { transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
 .sb-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semi); }
-.sb-section { display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.sidebar > * { flex-shrink: 0; } /* never squeeze a block: the sidebar scrolls instead, so courses never draw over the sync box */
+.sb-section { display: flex; flex-direction: column; gap: 4px; }
 .sb-title { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em; color: var(--muted); }
 .sb-add { width: 26px; height: 26px; }
 .sb-courses { display: flex; flex-direction: column; gap: 1px; }
