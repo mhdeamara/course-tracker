@@ -16,11 +16,11 @@
     city: 'haifa', lat: null, lng: null, // lat/lng are used when city is 'custom'
     method: 'egypt', asr: 'shafii',
     startToast: true, // a gentle note when a window starts while the site is open
-    general: { every: 0, quietFrom: '22:00', quietTo: '08:00' }, // a random general dhikr every N minutes (0 = off)
+    general: { every: 30, quietFrom: '22:00', quietTo: '08:00' }, // a random general dhikr every N minutes (0 = off)
     sound: false, vibrate: true, font: 1, // reading screen: text size factor 0.8–2
     points: false, // link to the points system (off; never deductions)
   };
-  A.FREQS = [0, 60, 120, 180];
+  A.FREQS = [0, 30, 60, 120, 180];
   A.PERIODS = { m: 'morning', e: 'evening', g: 'general' };
 
   /* Coordinates (degrees). Times use this device's clock and time zone. */

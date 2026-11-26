@@ -152,12 +152,15 @@ test('window note: once per window per day, not when already done, not when turn
   assert.deepEqual(A.due(st, m0, at(7)), []);
   assert.deepEqual(A.due(fresh({ startToast: false }), m0, at(6)), []);
   assert.deepEqual(A.due(fresh({ enabled: false }), m0, at(6)), []);
-  assert.deepEqual(A.due(fresh(), m0, at(13)), []); // outside both windows
+  assert.deepEqual(A.due(fresh({ general: { every: 0 } }), m0, at(13)), []); // outside both windows
 });
 
-test('general dhikr: off by default; every N minutes; not in quiet hours; muted for today', () => {
+test('general dhikr: every 30 minutes by default; can be off; every N minutes; not in quiet hours; muted for today', () => {
   const mem = { seen: { e: '2026-11-26' }, lastGen: at(12).getTime() };
-  assert.deepEqual(A.due(fresh(), mem, at(16)), []); // frequency off
+  assert.equal(A.cfg(fresh()).general.every, 30);
+  assert.deepEqual(A.due(fresh(), mem, at(12, 29)), []);
+  assert.deepEqual(A.due(fresh(), mem, at(12, 30)), [{ type: 'general' }]);
+  assert.deepEqual(A.due(fresh({ general: { every: 0 } }), mem, at(16)), []); // frequency off
   const st = fresh({ general: { every: 60 } });
   assert.deepEqual(A.due(st, mem, at(12, 59)), []);
   assert.deepEqual(A.due(st, mem, at(13)), [{ type: 'general' }]);

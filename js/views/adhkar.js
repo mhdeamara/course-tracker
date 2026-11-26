@@ -417,7 +417,7 @@
 
       <h3>אזכרה כללית במהלך היום</h3>
       <div class="form-grid adk-grid">
-        <label class="field"><span>תדירות</span><select data-adk-set="general.every">${A.FREQS.map((f) => opt(f, c.general.every, f ? `כל ${f / 60 === 1 ? 'שעה' : `${f / 60} שעות`}` : 'כבוי')).join('')}</select></label>
+        <label class="field"><span>תדירות</span><select data-adk-set="general.every">${A.FREQS.map((f) => opt(f, c.general.every, f === 30 ? 'כל חצי שעה' : f === 60 ? 'כל שעה' : f ? `כל ${f / 60} שעות` : 'כבוי')).join('')}</select></label>
         <label class="field"><span>שעות שקט מ־</span><input type="time" data-adk-set="general.quietFrom" value="${esc(c.general.quietFrom)}"></label>
         <label class="field"><span>עד</span><input type="time" data-adk-set="general.quietTo" value="${esc(c.general.quietTo)}"></label>
       </div>
