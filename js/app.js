@@ -253,6 +253,7 @@
     ['Delete', 'מחיקת שורה'],
     ['Ctrl + Z', 'ביטול פעולה אחרונה'],
     ['t', 'טיימר לימוד'],
+    ['a', 'עוזר AI (גם כפתור 🤖 בפינה)'],
     ['g ואז d / s / r / t', 'מעבר לדשבורד / מערכת / חזרה / סטטיסטיקות'],
     ['?', 'החלון הזה'],
     ['Esc', 'סגירת חלון / ביטול עריכה'],
@@ -283,7 +284,8 @@
     if (e.key === '?') { e.preventDefault(); app.showHelp(); return; }
     if ((e.key === 'g' || e.key === 'ע') && !e.altKey) { gPending = Date.now(); return; }
     if ((e.key === 'n' || e.key === 'מ') && route === '') { e.preventDefault(); CT.views.course.courseForm(); return; }
-    if ((e.key === 't' || e.key === 'א') && CT.timer) { e.preventDefault(); CT.timer.open(); }
+    if ((e.key === 't' || e.key === 'א') && CT.timer) { e.preventDefault(); CT.timer.open(); return; }
+    if ((e.key === 'a' || e.key === 'ש') && CT.views.ai) { e.preventDefault(); CT.views.ai.open(); }
   });
 
   /* ---------- boot ---------- */
@@ -294,6 +296,7 @@
     S.subscribe(() => app.rerender());
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     if (CT.timer) CT.timer.init();
+    if (CT.views.ai) CT.views.ai.mountFab();
     app.rerender();
     // runs in the background; replaces data if the cloud is newer. Moodle auto-sync starts after it, on the final data.
     if (CT.cloud) Promise.resolve(CT.cloud.init()).catch(() => {}).then(() => CT.views.moodle.startAuto());

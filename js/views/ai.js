@@ -106,6 +106,59 @@
       default: break;
     }
   };
+  /* ---------- floating button (every screen) + quick panel. The chat will live in this panel (step C). ---------- */
+  V.mountFab = () => {
+    if (document.getElementById('ai-fab')) return;
+    const b = document.createElement('button');
+    b.id = 'ai-fab';
+    b.className = 'ai-fab';
+    b.type = 'button';
+    b.title = 'עוזר AI (A)';
+    b.setAttribute('aria-label', 'עוזר AI (קיצור: A)');
+    b.textContent = '🤖';
+    b.onclick = V.open;
+    document.body.appendChild(b);
+  };
+
+  V.open = () => {
+    if (document.querySelector('.ai-panel')) return;
+    const cloud = C();
+    const box = document.createElement('div');
+    box.className = 'ai-panel';
+    const toSettings = '<button class="btn btn-ghost" data-ai-go>להגדרות העוזר</button>';
+    const soon = '<p class="small muted">בקרוב כאן: צ\'אט על הקורסים והמטלות שלך, וקריאת גיליון ציונים (PDF או תמונה).</p>';
+    const paint = (status, buttons) => {
+      box.innerHTML = `${status}${soon}<div class="btn-row">${buttons}${toSettings}</div>`;
+      const go = box.querySelector('[data-ai-go]');
+      go.onclick = () => { m.close(); location.hash = '#/settings'; setTimeout(() => { const el = document.getElementById('ai'); if (el) el.scrollIntoView({ block: 'start' }); }, 60); };
+      const ping = box.querySelector('[data-ai-ping]');
+      if (ping) ping.onclick = async () => {
+        ping.disabled = true;
+        ping.textContent = 'בודק…';
+        try { const r = await V.call({ action: 'ping' }); ui.toast(`✅ העוזר עובד (${esc(r.model)}, עלות הבדיקה ${money(r.costUsd)})`); } catch (e) { ui.toast(e.message, { error: true }); }
+        load();
+      };
+    };
+    const load = async () => {
+      if (!cloud || !cloud.enabled) return paint('<p class="muted">העוזר עובד דרך Supabase, שעוד לא הוגדר באתר הזה.</p>', '');
+      if (!cloud.signedIn()) return paint('<p class="muted">כדי להשתמש בעוזר צריך להתחבר לחשבון באתר (בהגדרות ← "סנכרון בין מכשירים").</p>', '');
+      paint('<p class="small muted">בודק…</p>', '');
+      try {
+        const r = await V.call({ action: 'usage' });
+        info = Object.assign({ state: 'ok' }, r);
+        const t = r.today || {};
+        const L = r.limits || {};
+        paint(`${r.configured ? '<p>✅ העוזר מוגדר ומוכן.</p>' : '<p class="ai-error">⚠️ חסר הסוד <code dir="ltr">ANTHROPIC_API_KEY</code> ב-Supabase (ההוראות ב-README).</p>'}
+          <p class="small">נוצל היום: <b dir="ltr">${money(t.costUsd)}</b> מתוך <b dir="ltr">${money(L.dailyCostUsd)}</b> · ${t.requests || 0} בקשות</p>`,
+          r.configured ? '<button class="btn btn-primary" data-ai-ping>בדוק חיבור</button>' : '');
+      } catch (e) {
+        paint(`<p class="ai-error">⚠️ ${esc(e.message)}</p>`, '');
+      }
+    };
+    const m = ui.modal({ title: '🤖 עוזר AI', body: box });
+    load();
+  };
+
   V.onChange = (t) => {
     const k = t.dataset.aiPref;
     if (k && t.value in V.MODELS) S.commit('מודל לעוזר', (st) => { st.settings.ai = Object.assign({}, V.DEFAULTS, st.settings.ai || {}, { [k]: t.value }); });

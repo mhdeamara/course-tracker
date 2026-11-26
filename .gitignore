@@ -8,3 +8,7 @@ course-tracker-backup-*.json
 course-tracker-data.json
 # official catalog PDFs are downloaded for reference only — never committed
 *.pdf
+# Supabase CLI local state (created by `npx supabase login` / deploy)
+supabase/.temp/
+.env
+.env.*

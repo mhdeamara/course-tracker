@@ -860,3 +860,14 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .ai-usage { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
 .ai-error { color: var(--danger); }
 .ai-card select { max-width: 100%; }
+.ai-fab {
+  position: fixed; bottom: 20px; inset-inline-end: 20px; z-index: 70;
+  width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--accent); color: var(--accent-text); font-size: 26px; line-height: 1;
+  box-shadow: 0 4px 14px rgba(10, 14, 22, .28); transition: transform .12s;
+}
+.ai-fab:hover { transform: scale(1.07); }
+.ai-fab:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+.ai-panel p { margin: 0 0 8px; }
+@media (max-width: 700px) { .ai-fab { bottom: 14px; inset-inline-end: 14px; width: 48px; height: 48px; font-size: 24px; } }
+@media print { .ai-fab { display: none; } }
