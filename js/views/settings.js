@@ -36,7 +36,7 @@
             <button class="btn btn-primary" data-action="export">${icon.download} ייצוא גיבוי (JSON)</button>
             <button class="btn" data-action="import">${icon.upload} ייבוא גיבוי</button>
           </div>
-          ${b.preUpgradeRaw() ? `<p class="small">🛟 לפני השדרוג לגרסה 2 (ציונים וסמסטרים קודמים) נשמר עותק של הנתונים כפי שהיו.
+          ${b.preUpgradeRaw() ? `<p class="small">🛟 לפני השדרוג האחרון של מבנה הנתונים נשמר עותק של הנתונים כפי שהיו.
             לשחזור: מורידים אותו כאן ← <b>ייבוא גיבוי</b> ← בוחרים את הקובץ.</p>
             <button class="btn btn-small" data-action="pre-upgrade">${icon.download} הורד את הגיבוי שלפני השדרוג</button>` : ''}
           <h3>שמירה אוטומטית לקובץ</h3>

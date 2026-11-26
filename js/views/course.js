@@ -369,6 +369,10 @@
           <label class="field span-2"><span>קישור</span><input name="link" dir="ltr" placeholder="https://..." value="${esc(it.link)}"></label>
           <label class="field span-2"><span>תגיות (מופרדות בפסיק)</span><input name="tags" dir="auto" placeholder="קשה, הגשה, לשאול מתרגל" value="${esc(it.tags.join(', '))}"></label>
           <label class="check-field span-2"><input type="checkbox" name="flag" ${it.flag ? 'checked' : ''}> ⭐ לחזור לפני המבחן</label>
+          ${CT.game ? `<label class="field"><span>קושי (לנקודות)</span><select name="diff">
+            <option value="">אוטומטי (${CT.game.DIFF_LABELS[CT.game.difficulty({ title: it.title }, f.cat)]})</option>
+            ${[1, 2, 3].map((d) => `<option value="${d}" ${Number(it.diff) === d ? 'selected' : ''}>${CT.game.DIFF_LABELS[d]}</option>`).join('')}
+          </select></label>` : ''}
           <label class="field span-2"><span>הערה (תומך ב-LaTeX: $...$)</span><textarea name="note" dir="auto" rows="6">${esc(it.note)}</textarea></label>
         </div>
         ${it.completedAt ? `<p class="muted">הושלם ב-${u.fmtDateFull(u.isoDate(new Date(it.completedAt)))}</p>` : ''}`,
@@ -381,6 +385,8 @@
               const x = S.findItem(id).item;
               x.title = g('title').value.trim() || x.title;
               if (g('status').value !== x.status) {
+                if (g('status').value === 'done' && x.status === 'review') x.fromReview = true;
+                else if (g('status').value !== 'done') delete x.fromReview;
                 x.status = g('status').value;
                 x.completedAt = x.status === 'done' ? new Date().toISOString() : null;
               }
@@ -389,6 +395,7 @@
               x.tags = g('tags').value.split(/[,،]/).map((t) => t.trim()).filter(Boolean);
               x.flag = g('flag').checked;
               x.note = g('note').value;
+              if (g('diff')) { if (g('diff').value) x.diff = Number(g('diff').value); else delete x.diff; }
             });
           },
         },

@@ -78,6 +78,7 @@
       grades: () => views.gpa.render(main, params),
       settings: () => views.settings.render(main, params),
       moodle: () => views.moodle.render(main, params),
+      xp: () => views.xp.render(main, params),
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
     const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
@@ -150,6 +151,7 @@
           : `<span class="sb-dot ${days > 7 ? 'warn' : 'ok'}"></span>גיבוי אחרון ${days === 0 ? 'היום' : days === 1 ? 'אתמול' : `לפני ${days} ימים`}`;
     sb.innerHTML = `
       <a href="#/" class="sb-brand"><span class="sb-logo" aria-hidden="true">📚</span><span>הקורסים שלי</span></a>
+      ${CT.views.xp ? CT.views.xp.chipHTML() : ''}
       <nav class="sb-nav">
         ${NAV.filter(([r]) => r === '' || CT.views[viewKey(r)]).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
       </nav>

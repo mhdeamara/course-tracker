@@ -38,7 +38,7 @@
         ${extraTop}
         <div class="today-grid">
           ${nextHTML(actions)}
-          <div class="today-side">${extraSide || todayHTML(st, courses)}</div>
+          <div class="today-side">${extraSide}${todayHTML(st, courses)}</div>
         </div>
         <section class="card urgent" aria-labelledby="urgent-h">
           <div class="card-head"><h2 id="urgent-h">מה דחוף</h2><span class="muted small">7 הימים הקרובים${urgent.length ? ` · ${urgent.length}` : ''}</span></div>

@@ -4,8 +4,9 @@
   const u = CT.u;
   const m = {};
 
-  m.VERSION = 2; // 2: semester year/term, course kind/outcome, GPA settings
-  m.BACKUP_KEY = 'ct.backup.pre-v2'; // untouched copy of the data, saved right before the v1 → v2 upgrade
+  m.VERSION = 3; // 2: semester year/term, course kind/outcome, GPA settings · 3: points ledger (state.game)
+  m.BACKUP_KEY = `ct.backup.pre-v${m.VERSION}`; // untouched copy of the data, saved right before upgrading to this version
+  m.OLD_BACKUP_KEYS = ['ct.backup.pre-v2'];
 
   m.TERMS = { winter: 'חורף', spring: 'אביב', summer: 'קיץ' };
   m.TERM_ORDER = ['winter', 'spring', 'summer'];
@@ -137,6 +138,7 @@
     const sem = m.newSemester({ name: 'חורף תשפ״ז', year: 5787, term: 'winter', ...m.WINTER_5787 });
     st.semesters.push(sem);
     st.settings.activeSemesterId = sem.id;
+    if (CT.game) CT.game.ensure(st);
     return st;
   };
 
@@ -188,6 +190,8 @@
       }));
       return nc;
     });
+    // v3: points ledger. The first time, everything already done becomes the starting line (earns nothing).
+    if (CT.game) CT.game.ensure(st);
     st.version = Math.max(m.VERSION, Number(data.version) || 0);
     return st;
   };

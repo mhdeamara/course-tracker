@@ -16,6 +16,7 @@
           try { if (!localStorage.getItem(CT.model.BACKUP_KEY)) localStorage.setItem(CT.model.BACKUP_KEY, raw); } catch (_) { /* storage full: upgrade anyway */ }
         }
         s.state = CT.model.migrate(parsed);
+        if (CT.game) CT.game.reconcile(s.state);
         s.persist(true); // save any one-time upgrades (dates, colors, cleanup) right away
         return 'loaded';
       } catch (e) {
@@ -53,8 +54,10 @@
     }
     s.lastCoalesce = opts.coalesce ? { key: opts.coalesce, t: now } : null;
     const result = fn(s.state);
+    const awards = CT.game ? CT.game.sync(s.state) : null; // points follow the change (see game.js)
     s.persist();
     if (!opts.silent) s.emit();
+    if (awards && CT.game.notify) CT.game.notify(awards);
     return result;
   };
 
@@ -62,6 +65,7 @@
   s.replace = (newState, label) => {
     s.undoStack.push({ label, snap: JSON.stringify(s.state) });
     s.state = newState;
+    if (CT.game) CT.game.reconcile(s.state);
     s.persist();
     s.emit();
   };
@@ -116,6 +120,8 @@
   s.setStatus = (itemId, status) => s.commit('שינוי סטטוס', () => {
     const f = s.findItem(itemId);
     if (!f) return;
+    if (status === 'done' && f.item.status === 'review') f.item.fromReview = true; // closing a "צריך לחזור" earns a bonus
+    else if (status !== 'done') delete f.item.fromReview;
     f.item.status = status;
     f.item.completedAt = status === 'done' ? (f.item.completedAt || new Date().toISOString()) : null;
   });
