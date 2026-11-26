@@ -36,6 +36,21 @@
     if (btn) { btn.innerHTML = isDark() ? icon.sun : icon.moon; btn.setAttribute('aria-label', isDark() ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'); }
   }
 
+  /* ---------- motion and sound (per device, like the theme) ---------- */
+  // motion: 'auto' = follow the system "reduce motion" setting · 'reduce' = almost no animation · 'full' = always animate
+  const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
+  app.motion = () => pref('ct.motion', 'auto');
+  app.setMotion = (m) => { setPref('ct.motion', m); applyMotion(); };
+  app.reducedMotion = () => app.motion() === 'reduce' || (app.motion() === 'auto' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  app.sound = () => pref('ct.sound', 'off') === 'on';
+  app.setSound = (on) => setPref('ct.sound', on ? 'on' : 'off');
+  function applyMotion() {
+    const m = app.motion();
+    if (m === 'auto') delete document.documentElement.dataset.motion; else document.documentElement.dataset.motion = m;
+  }
+  applyMotion();
+
   /* ---------- router ---------- */
   const viewKey = (route) => (route === 'grades' ? 'gpa' : route); // route name → CT.views key
   const parseHash = () => {
@@ -66,7 +81,14 @@
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
     const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
+    const pathNow = location.hash.split('?')[0];
+    const entering = app.lastPath !== pathNow; // a new page (not a re-render after an edit) fades in
+    app.lastPath = pathNow;
     fn();
+    if (entering) {
+      main.classList.remove('route-in'); void main.offsetWidth; main.classList.add('route-in');
+      clearTimeout(app.routeTimer); app.routeTimer = setTimeout(() => main.classList.remove('route-in'), 600);
+    }
     // nav state
     document.querySelectorAll('.nav a').forEach((a) => {
       const on = a.dataset.route === route;

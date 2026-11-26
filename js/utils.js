@@ -133,6 +133,7 @@ window.CT = window.CT || {};
     undo: svg('<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/>'),
     up: svg('<path d="M12 19V5M6 11l6-6 6 6"/>'),
     down: svg('<path d="M12 5v14M6 13l6 6 6-6"/>'),
+    chev: svg('<path d="m6 9 6 6 6-6"/>'),
     play: svg('<path d="M7 4l13 8-13 8z"/>', 'data-fill'),
     pause: svg('<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>', 'data-fill'),
     stop: svg('<rect x="6" y="6" width="12" height="12" rx="1.5"/>', 'data-fill'),

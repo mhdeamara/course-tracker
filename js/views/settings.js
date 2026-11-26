@@ -85,12 +85,17 @@
         </section>
 
         <section class="card">
-          <h2>🎨 תצוגה ופומודורו</h2>
+          <h2>🎨 תצוגה, אנימציות ופומודורו</h2>
           <div class="form-grid">
             <label class="field"><span>ערכת צבעים</span>
               <select data-action="theme">
                 ${[['auto', 'לפי המערכת'], ['light', 'בהיר'], ['dark', 'כהה']].map(([k, l]) => `<option value="${k}" ${CT.app.theme() === k ? 'selected' : ''}>${l}</option>`).join('')}
               </select></label>
+            <label class="field"><span>אנימציות</span>
+              <select data-action="motion">
+                ${[['auto', 'לפי המערכת'], ['reduce', 'מופחתות'], ['full', 'מלאות']].map(([k, l]) => `<option value="${k}" ${CT.app.motion() === k ? 'selected' : ''}>${l}</option>`).join('')}
+              </select></label>
+            <label class="check-field"><input type="checkbox" data-action="sound"${CT.app.sound() ? ' checked' : ''}> צלילי משוב (בהשלמה ובהישג)</label>
             <label class="field"><span>פומודורו — דקות עבודה</span><input type="number" min="5" max="120" name="work" value="${st.settings.pomodoro.work}"></label>
             <label class="field"><span>פומודורו — דקות הפסקה</span><input type="number" min="1" max="60" name="brk" value="${st.settings.pomodoro.brk}"></label>
           </div>
@@ -280,6 +285,8 @@
       return;
     }
     if (t.matches('[data-action=theme]')) CT.app.setTheme(t.value);
+    if (t.matches('[data-action=motion]')) CT.app.setMotion(t.value);
+    if (t.matches('[data-action=sound]')) CT.app.setSound(t.checked);
     if (t.name === 'work' || t.name === 'brk') {
       S.commit('הגדרות פומודורו', (st) => { st.settings.pomodoro[t.name] = Math.max(1, parseInt(t.value, 10) || 1); });
     }

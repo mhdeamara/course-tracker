@@ -82,6 +82,36 @@
     return { days: n, today: active.has(u.today()) };
   };
 
+  /**
+   * "הפעולה הבאה": open items ranked by what makes most sense now, each with a short reason. Order:
+   * overdue (oldest first) → due today / tomorrow → already started → due this week → marked "צריך לחזור" →
+   * the next item in line in each category (courses that are furthest behind first). At most `limit`, no repeats.
+   */
+  st.nextActions = (courses, today = u.today(), limit = 5) => {
+    const open = courses.flatMap(allItems).filter((x) => x.item.status !== 'done');
+    const out = [];
+    const seen = new Set();
+    const add = (list, reason) => list.forEach((x) => {
+      if (out.length >= limit || seen.has(x.item.id)) return;
+      seen.add(x.item.id);
+      out.push(Object.assign({ reason: typeof reason === 'function' ? reason(x) : reason }, x));
+    });
+    const byDue = (a, b) => a.item.due.localeCompare(b.item.due);
+    const dated = open.filter((x) => x.item.due).sort(byDue);
+    const inDays = (x) => u.daysBetween(today, x.item.due);
+    add(dated.filter((x) => x.item.due < today), (x) => (inDays(x) === -1 ? 'היה להגשה אתמול — עוד אפשר לסגור' : 'באיחור — כדאי לסגור ראשון'));
+    add(dated.filter((x) => inDays(x) >= 0 && inDays(x) <= 1), (x) => (inDays(x) === 0 ? 'להגשה היום' : 'להגשה מחר'));
+    add(open.filter((x) => x.item.status === 'doing'), 'כבר התחלת — קל להמשיך');
+    add(dated.filter((x) => inDays(x) >= 2 && inDays(x) <= 7), (x) => `דדליין בעוד ${inDays(x)} ימים`);
+    add(open.filter((x) => x.item.status === 'review'), 'סימנת שצריך לחזור לזה');
+    const behind = courses.slice().sort((a, b) => st.courseProgress(a).pct - st.courseProgress(b).pct);
+    behind.forEach((course) => course.categories.forEach((cat) => {
+      const first = cat.items.find((i) => i.status !== 'done');
+      if (first) add([{ item: first, cat, course }], `הבא בתור ב${cat.name}`);
+    }));
+    return out;
+  };
+
   st.allItems = allItems;
   CT.stats = st;
 })(window.CT);
