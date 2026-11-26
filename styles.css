@@ -921,3 +921,8 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .mm-connect p { margin: 0; }
 .moodle-revoke { margin: 8px 0; }
 .moodle-revoke p { margin: 6px 0; }
+.mm-changes summary { cursor: pointer; }
+.mm-change-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mm-change-list li { padding: 4px 8px; border-radius: 8px; }
+.mm-change-list li.unseen { background: var(--surface-2); font-weight: 600; }
+.mm-kind { display: inline-block; min-width: 7.5em; }

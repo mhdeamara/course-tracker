@@ -19,6 +19,10 @@ function net(o = {}) {
     if (url.endsWith('/auth/v1/user')) return o.user || json({ id: 'user-1' });
     if (url.endsWith('/rpc/moodle_feed_get')) return o.feed || json(o.link === null ? null : (o.link || LINK));
     if (url.endsWith('/rpc/moodle_claim_fetch')) return o.claim || json(0);
+    if (url.endsWith('/rpc/moodle_snapshot_save')) return o.save || new Response(null, { status: 204 });
+    if (url.endsWith('/rpc/moodle_cron_feeds')) return o.cronFeeds || json([]);
+    if (url.endsWith('/rpc/moodle_cron_save')) return o.cronSave || new Response(null, { status: 204 });
+    if (o.moodleBy && o.moodleBy[url]) return o.moodleBy[url]();
     if (url.startsWith('https://moodle')) { if (o.moodle instanceof Error) throw o.moodle; return o.moodle || new Response(ICS, { status: 200 }); }
     throw new Error(`unexpected fetch ${url}`);
   };
@@ -163,4 +167,69 @@ test('the link is stored only in Vault, through owner-only functions', () => {
   assert.doesNotMatch(js, /moodle_feed_get/);
   assert.match(js, /rpc\/moodle_feed_set/);
   assert.match(js, /rpc\/moodle_feed_delete/);
+});
+
+test('"refresh now" also keeps the result as the user\'s snapshot (with their token, hash, no link)', async () => {
+  const { calls } = await run({});
+  const save = calls.find((c) => c.url.endsWith('/rpc/moodle_snapshot_save'));
+  assert.ok(save, 'snapshot saved');
+  assert.equal(save.init.headers.Authorization, 'Bearer user-jwt');
+  const b = JSON.parse(save.init.body);
+  assert.match(b.p_hash, /^[0-9a-f]{64}$/);
+  assert.equal(b.p_events, 1);
+  assert.ok(!save.init.body.includes('SECRET123'));
+});
+
+const CRON = 'a'.repeat(64);
+const cronReq = (secret = CRON) => new Request('https://proj.supabase.co/functions/v1/moodle-ical', {
+  method: 'POST', headers: { 'x-cron-secret': secret, 'content-type': 'application/json' }, body: '{"mode":"cron"}',
+});
+
+test('schedule: a malformed secret is refused before anything is fetched', async () => {
+  const fetchFn = net({});
+  const res = await F.handle(cronReq('nope'), ENV, fetchFn);
+  assert.equal(res.status, 403);
+  assert.equal(fetchFn.calls.length, 0);
+});
+
+test('schedule: a secret that SQL rejects gets nothing', async () => {
+  const fetchFn = net({ cronFeeds: json({ code: '42501', message: 'forbidden' }, 400) });
+  const res = await F.handle(cronReq(), ENV, fetchFn);
+  assert.equal(res.status, 403);
+  assert.ok(!fetchFn.calls.some((c) => c.url.startsWith('https://moodle')));
+});
+
+test('schedule: fetches due links, stores results, never touches a non-Moodle address, returns counts only', async () => {
+  const OTHER = 'https://moodle25.technion.ac.il/calendar/export_execute.php?userid=2&authtoken=SECRET456';
+  const EVIL = 'https://evil.example/calendar/export_execute.php?userid=3&authtoken=SECRET789';
+  const fetchFn = net({
+    cronFeeds: json([{ user_id: 'u1', url: LINK }, { user_id: 'u2', url: OTHER }, { user_id: 'u3', url: EVIL }]),
+    moodleBy: { [OTHER]: () => new Response(null, { status: 303, headers: { location: 'https://moodle25.technion.ac.il/login/' } }) },
+  });
+  const res = await F.handle(cronReq(), ENV, fetchFn);
+  const text = await res.text();
+  assert.equal(res.status, 200);
+  assert.deepEqual(JSON.parse(text), { ok: true, due: 3, saved: 1, failed: 2, skipped: 0 });
+  for (const leak of ['SECRET123', 'SECRET456', 'SECRET789', 'u1', 'u2', 'u3', CRON]) assert.ok(!text.includes(leak), `response leaks ${leak}`);
+  assert.ok(!fetchFn.calls.some((c) => c.url.startsWith('https://evil')), 'no SSRF');
+  const saves = fetchFn.calls.filter((c) => c.url.endsWith('/rpc/moodle_cron_save')).map((c) => JSON.parse(c.init.body));
+  assert.deepEqual(saves.map((b) => [b.p_user, b.p_error, b.p_secret === CRON]), [['u1', null, true], ['u2', 'link-rejected', true], ['u3', 'bad-link', true]]);
+  assert.match(saves[0].p_hash, /^[0-9a-f]{64}$/);
+  // no user token on the schedule: only the publishable key
+  for (const c of fetchFn.calls.filter((x) => x.url.includes('/rest/v1/'))) assert.equal(c.init.headers.Authorization, undefined);
+});
+
+test('the schedule: cron functions are gated by the Vault secret, and the job text holds no secret', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'moodle.sql'), 'utf8').replace(/--.*$/gm, '');
+  for (const fn of ['moodle_cron_feeds', 'moodle_cron_save']) {
+    const body = sql.slice(sql.indexOf(`function public.${fn}(`), sql.indexOf('$$;', sql.indexOf(`function public.${fn}(`)));
+    assert.match(body, /if not public\.moodle__cron_ok\(p_secret\) then\s+raise exception/, `${fn} checks the secret first`);
+  }
+  assert.match(sql, /revoke all on function public\.moodle__cron_ok\(text\) from public, anon, authenticated/);
+  assert.match(sql, /revoke all on function public\.moodle__save_snapshot\([^)]*\) from public, anon, authenticated/);
+  const job = sql.slice(sql.indexOf("cron.schedule('moodle-ical-refresh'"));
+  assert.match(job, /vault\.decrypted_secrets where name = 'moodle_cron_secret'/, 'reads the secret at run time');
+  assert.doesNotMatch(job, /[0-9a-f]{32,}/, 'no literal secret in the job');
 });

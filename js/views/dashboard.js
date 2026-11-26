@@ -67,6 +67,7 @@
       out.push(`<div class="banner banner-warn" role="status">⚠️ הנתונים השתנו בשני מכשירים ועדיין לא נבחרה גרסה.
         <button class="btn btn-small btn-primary" data-action="sync-now">פתור עכשיו</button></div>`);
     }
+    if (CT.views.moodle && CT.views.moodle.bannerHTML) { const mb = CT.views.moodle.bannerHTML(); if (mb) out.push(mb); }
     const inboxN = S.state.moodle && S.state.moodle.inbox ? S.state.moodle.inbox.length : 0;
     const linkErr = S.state.moodle && S.state.moodle.linkError;
     if (linkErr) {
@@ -195,6 +196,7 @@
       case 'regrant': CT.backup.regrant(); break;
       case 'sync-now': CT.cloud.syncNow(); break;
       case 'moodle-inbox': CT.views.moodle.showInbox(); break;
+      case 'moodle-seen': CT.views.moodle.markSeen(); break;
       default: break;
     }
   }

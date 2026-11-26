@@ -325,3 +325,54 @@ test('summary text', () => {
   assert.equal(Mo.summary({ added: 2, updated: 1, restored: 0, gone: 0, unassigned: 3 }), '2 חדשות · 1 עודכנו · 3 לא משויכות');
   assert.equal(Mo.summary({}), 'אין שינויים');
 });
+
+/* ================= "מה השתנה" list and the link's range ================= */
+test('change list: new, date changed, gone, back — newest first, unseen until marked', () => {
+  const c = course({ number: '00440131' });
+  const st = state(c);
+  // E2 is due before E1's new date: "gone" is only marked up to the last date the new feed covers
+  const E2 = { ...E1, uid: '102@moodle26.technion.ac.il', summary: 'תרגיל בית 2 is due', start: '20261212T215900Z' };
+  const r1 = Mo.merge(st, events(E1, E2), OPTS);
+  assert.deepEqual(r1.changes.map((x) => x.kind), ['new', 'new']);
+  assert.equal(Mo.unseenText(Mo.unseen(st)), 'נוספו 2 מטלות חדשות');
+  Mo.markSeen(st);
+  assert.equal(Mo.unseen(st).total, 0);
+  // same file again: nothing new in the list
+  assert.equal(Mo.merge(st, events(E1, E2), OPTS).changes.length, 0);
+  assert.equal(st.moodle.changes.length, 2);
+  // E1 moves, E2 leaves the feed
+  const r2 = Mo.merge(st, events({ ...E1, start: '20261214T215900Z' }), { ...OPTS, now: '2026-11-27T10:00:00.000Z' });
+  assert.deepEqual(r2.changes.map((x) => x.kind).sort(), ['changed', 'gone']);
+  const ch = st.moodle.changes.find((x) => x.kind === 'changed');
+  assert.equal(ch.prevDue, '2026-12-10');
+  assert.equal(ch.due, '2026-12-14');
+  assert.equal(ch.course, c.id);
+  assert.equal(st.moodle.changes[0].at, '2026-11-27T10:00:00.000Z', 'newest first');
+  assert.equal(Mo.unseenText(Mo.unseen(st)), 'מטלה אחת השתנתה · מטלה אחת לא מופיעה יותר');
+  assert.equal(items(c).length, 2, 'nothing deleted');
+  const r3 = Mo.merge(st, events({ ...E1, start: '20261214T215900Z' }, E2), OPTS);
+  assert.deepEqual(r3.changes.map((x) => x.kind), ['restored']);
+  assert.equal(st.moodle.horizon, '2026-12-14');
+});
+
+test('change list: an unassigned event is listed once, and the list is capped', () => {
+  const st = state(course({ number: '00440131', name: 'מבני נתונים' }));
+  const A = { uid: 'a@x', summary: 'עבודה is due', start: '20261210T215900Z', cats: 'שם שלא מתאים לשום דבר' };
+  Mo.merge(st, events(A), OPTS);
+  Mo.merge(st, events(A), OPTS);
+  assert.equal(st.moodle.changes.filter((x) => x.uid === 'a@x').length, 1);
+  assert.equal(st.moodle.changes[0].unassigned, true);
+  st.moodle.changes = Array.from({ length: 150 }, (_, i) => ({ kind: 'new', uid: `x${i}`, seen: true }));
+  Mo.merge(st, events({ ...A, uid: 'b@x' }), OPTS);
+  assert.equal(st.moodle.changes.length, Mo.CHANGES_MAX);
+  assert.equal(st.moodle.changes[0].uid, 'b@x');
+});
+
+test('link range: moving windows are fine, short ones and missing "all events" warn', () => {
+  assert.equal(Mo.rangeInfo('custom', 'all').warn, false);
+  assert.equal(Mo.rangeInfo('recentupcoming', 'all').warn, false);
+  assert.equal(Mo.rangeInfo('weeknow', 'all').warn, true);
+  assert.equal(Mo.rangeInfo('monthnext', 'all').warn, true);
+  assert.equal(Mo.rangeInfo('custom', 'courses').warn, true);
+  assert.match(Mo.rangeInfo(null, null).text, /שמירה מחדש/);
+});

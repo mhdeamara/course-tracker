@@ -143,7 +143,7 @@
     feed = { state: 'loading' };
     try {
       const f = await C().moodleFeed();
-      feed = f ? { state: 'ok', host: f.host, updatedAt: f.updated_at } : { state: 'none' };
+      feed = f ? { state: 'ok', host: f.host, updatedAt: f.updated_at, preset: f.preset || null, what: f.what || null } : { state: 'none' };
       flag(!!f);
     } catch (e) {
       feed = { state: 'error', error: TABLE_MISSING.test(`${e.message} ${e.code}`) ? 'הטבלה moodle_feeds עוד לא נוצרה ב-Supabase. הרץ את supabase/moodle.sql (הוראות ב-README).' : C().heMsg(e) };
@@ -195,9 +195,11 @@
         עד אז, מי שמחזיק בקישור יכול לראות רק את לוח השנה שלך (מועדים ושמות מטלות) — לא את הקורסים, הציונים או ההגשות.</p></details>
         ${checked ? `<p class="small">✅ הקישור תקין: ${checked.events} אירועים בלוח. <button class="btn btn-small" data-action="moodle-import-checked">ייבא אותם עכשיו</button></p>` : ''}
         <div class="moodle-prefs small">
-          <label><input type="checkbox" data-moodle-pref="auto"${m.auto ? ' checked' : ''}> סנכרון אוטומטי בכל כניסה לאתר (אם עברו יותר מ-30 דקות)</label>
-          <label><input type="checkbox" data-moodle-pref="periodic"${m.periodic ? ' checked' : ''}> רענון כל שעה כשהאתר פתוח</label>
-        </div>`;
+          <label><input type="checkbox" data-moodle-pref="auto"${m.auto ? ' checked' : ''}> עדכון בכל כניסה לאתר</label>
+          <label><input type="checkbox" data-moodle-pref="periodic"${m.periodic ? ' checked' : ''}> עדכון כל 30 דקות כשהאתר פתוח</label>
+        </div>
+        <p class="small muted">🕑 השרת מרענן את הקישור לבד כל שעתיים, גם כשהאתר סגור${m.serverCheckedAt ? ` (בדיקה אחרונה: ${esc(fmtWhen(m.serverCheckedAt))})` : ' — עוד לא רץ: צריך להריץ את supabase/moodle.sql ולפרוס מחדש את moodle-ical'}.</p>
+        ${V.rangeHTML()}`;
     }
     return `<h3>סנכרון אוטומטי דרך קישור</h3>${body}${errLine}${lastLine}`;
   }
@@ -216,7 +218,7 @@
     }
     let parsed;
     try { parsed = I.parse((res && res.ics) || ''); } catch (e) { throw Object.assign(new Error('מודל לא החזיר לוח שנה תקין. העתק את הקישור שוב ממודל'), { code: 'link-rejected' }); }
-    return { events: parsed.events };
+    return { events: parsed.events, hash: res && res.hash };
   }
 
   // problems only you can fix: they stay on screen (settings + dashboard) until a sync succeeds
@@ -231,11 +233,13 @@
    */
   V.syncLink = async ({ manual = false, events = null, inline = false } = {}) => {
     if (busy) return null;
+    let hash = null;
     if (manual) { busy = 'sync'; rerender(); } else { busy = 'auto'; rerender(); }
     try {
-      const evs = events || (await fetchEvents()).events;
+      let evs = events;
+      if (!evs) { const got = await fetchEvents(); evs = got.events; hash = got.hash || null; }
       checked = null;
-      const stamp = (st) => Object.assign(Mo.ensure(st), { lastLink: new Date().toISOString(), linkError: null });
+      const stamp = (st) => Object.assign(Mo.ensure(st), { lastLink: new Date().toISOString(), linkError: null }, hash ? { lastHash: hash, serverAt: new Date().toISOString() } : {});
       let r = null;
       if (!evs.length) {
         S.commit('', stamp, { undo: false, silent: !manual });
@@ -258,20 +262,84 @@
     }
   };
 
-  /** Automatic sync, started after the cloud data has loaded: on opening (> 30 min since the last link sync, on any
-   *  device — the time is part of the synced data) and every hour while the site is open. */
+  /* ---------- the scheduled refresh (server) ---------- */
+  // error codes the server stores with a snapshot → the message shown here
+  const SERVER_ERRORS = {
+    'link-rejected': 'מודל דחה את הקישור ברענון האוטומטי. העתק אותו שוב ממודל והדבק בהגדרות',
+    'bad-link': 'הקישור השמור לא תקין. העתק אותו שוב ממודל והדבק בהגדרות',
+    'too-big': 'הלוח שמודל מחזיר גדול מדי. הפק קישור עם טווח קצר יותר',
+  };
+  const STALE_MIN = 180; // no server check for 3 hours → the schedule is not running; fall back to fetching from here
+  let lastPull = 0;
+  /**
+   * Read the calendar the server fetched last (every 2 hours, while the site is closed too) and merge it when it
+   * changed. Returns the snapshot row (or null). Quiet: a toast only when something changed.
+   */
+  V.pullSnapshot = async () => {
+    if (busy || !C() || !C().signedIn()) return null;
+    lastPull = Date.now();
+    let row;
+    try { row = await C().moodleSnapshot(); } catch (e) { return null; } // table not created yet: the live fetch still works
+    if (!row) return null;
+    const m = mo();
+    if (row.error && SERVER_ERRORS[row.error]) {
+      if (!m.linkError || m.linkError.code !== row.error) S.commit('', (st) => { Mo.ensure(st).linkError = { code: row.error, message: SERVER_ERRORS[row.error], at: row.checked_at }; }, { undo: false, silent: true });
+    }
+    if (row.hash && row.ics && row.hash !== m.lastHash) {
+      let evs = null;
+      try { evs = I.parse(row.ics).events; } catch (e) { evs = null; }
+      if (evs) {
+        const r = S.commit('רענון אוטומטי ממודל', (st) => {
+          const out = Mo.merge(st, evs, mergeOpts('server'));
+          Object.assign(Mo.ensure(st), { lastHash: row.hash, serverAt: row.fetched_at, serverCheckedAt: row.checked_at }, row.error ? {} : { linkError: null });
+          return out;
+        });
+        if (r.changes && r.changes.length) ui.toast(`מודל: ${Mo.unseenText(Mo.unseen(S.state))}`, { action: { label: 'מה השתנה', fn: () => { location.hash = '#/moodle'; } } });
+      }
+    } else if (row.checked_at !== m.serverCheckedAt) {
+      S.commit('', (st) => { Object.assign(Mo.ensure(st), { serverCheckedAt: row.checked_at }, row.error ? {} : { linkError: null }); }, { undo: false, silent: true });
+    }
+    rerender();
+    return row;
+  };
+  const stale = (row) => !row || !row.checked_at || Date.now() - new Date(row.checked_at).getTime() > STALE_MIN * 60000;
+
+  /** Automatic refresh, started after the cloud data has loaded: read the server's latest calendar on opening and
+   *  every 30 minutes. Only when the schedule has not run for 3 hours (not set up yet) does the site fetch from
+   *  Moodle itself (on opening if > 30 min since the last fetch, hourly while open). */
   let autoTimer = null;
   V.startAuto = () => {
     if (autoTimer || !C() || !C().enabled) return;
     const due = (minutes) => { const t = mo().lastLink; return !t || Date.now() - new Date(t).getTime() > minutes * 60000; };
-    const tick = (opening) => {
+    const tick = async (opening) => {
       const m = mo();
       if (!C().signedIn() || !hasFlag() || !navigator.onLine || document.hidden || busy) return;
-      if (opening ? (m.auto && due(30)) : (m.periodic && due(60))) V.syncLink({ manual: false });
+      if (!(opening ? m.auto : m.periodic)) return;
+      if (!opening && Date.now() - lastPull < 30 * 60000) return;
+      const row = await V.pullSnapshot();
+      if (stale(row) && (opening ? due(30) : due(60))) V.syncLink({ manual: false });
     };
     tick(true);
     autoTimer = setInterval(() => tick(false), 5 * 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(false); });
+  };
+
+  /** Dashboard banner: unseen changes from Moodle. */
+  V.bannerHTML = () => {
+    const n = Mo.unseen(S.state);
+    if (!n.total) return '';
+    return `<div class="banner banner-info" role="status">📥 ממודל: ${esc(Mo.unseenText(n))}.
+      <a class="btn btn-small btn-primary" href="#/moodle">מה השתנה</a>
+      <button class="btn btn-small btn-ghost" data-action="moodle-seen">ראיתי</button></div>`;
+  };
+  V.markSeen = () => S.commit('', (st) => Mo.markSeen(st), { undo: false });
+
+  /** "טווח הקישור" notice (settings + the page). */
+  V.rangeHTML = () => {
+    if (feed.state !== 'ok') return '';
+    const r = Mo.rangeInfo(feed.preset, feed.what);
+    const hz = mo().horizon ? ` האירוע הרחוק ביותר שהגיע: <b>${esc(u.fmtDateFull(mo().horizon))}</b>.` : '';
+    return `<p class="small ${r.warn ? 'moodle-error' : 'muted'}">${r.warn ? '⚠️ ' : '📆 '}טווח הקישור: <b>${esc(r.label)}</b>. ${esc(r.text)}${r.whatWarn ? ` ${esc(r.whatWarn)}` : ''}${hz}</p>`;
   };
 
   V.onChange = (t) => {
@@ -335,6 +403,7 @@
           checked = null;
           feed = { state: 'none' };
           setLinkError(null, false);
+          S.commit('', (st) => Object.assign(Mo.ensure(st), { lastHash: null, serverAt: null, serverCheckedAt: null }), { undo: false, silent: true });
           ui.toast('הקישור נמחק מהחשבון שלך (גם מ-Vault). במודל עצמו הוא עדיין עובד — אם הוא דלף, בקש מתמיכת המודל לאפס אותו');
         } catch (e) { ui.toast(C().heMsg(e), { error: true }); }
         return;
@@ -463,11 +532,13 @@
     const open = shown.filter(({ item }) => !isDone(item)).sort((a, b) => sortKey(a.item).localeCompare(sortKey(b.item)));
     const done = shown.filter(({ item }) => isDone(item)).sort((a, b) => sortKey(b.item).localeCompare(sortKey(a.item)));
     const overdueN = open.filter(({ item }) => bucketOf(item) === 'overdue').length;
+    if (connected && feed.state === 'unknown') setTimeout(loadFeed, 0);
     const last = m.last;
-    const lastAt = m.lastLink || (last && last.at);
+    const lastAt = [m.serverAt, m.lastLink, last && last.at].filter(Boolean).sort().pop();
     const counts = last ? [last.added && `<b>${last.added}</b> חדשות`, last.updated && `<b>${last.updated}</b> עודכנו`, last.gone && `${last.gone} לא מופיעות יותר`].filter(Boolean).join(' · ') : '';
     const status = `<p class="small mm-status">${lastAt ? `עודכן לאחרונה: <b>${esc(fmtWhen(lastAt))}</b> <span class="muted">(${esc(timeAgo(lastAt))}${last && last.source === 'file' && !m.lastLink ? ', מקובץ' : ''})</span>${counts ? ` · ברענון האחרון: ${counts}` : last ? ' · ברענון האחרון: אין שינויים' : ''}` : 'עוד לא עודכן ממודל.'}
-      ${busy === 'auto' ? ' · <span class="muted">מרענן ברקע…</span>' : ''}</p>`;
+      ${busy === 'auto' ? ' · <span class="muted">מרענן ברקע…</span>' : ''}
+      ${connected ? `<br><span class="muted">רענון אוטומטי בשרת כל שעתיים${m.serverCheckedAt ? ` · בדיקה אחרונה ${esc(timeAgo(m.serverCheckedAt))}` : ' · עוד לא פעיל (צריך להריץ את supabase/moodle.sql)'}</span>` : ''}</p>`;
     const err = m.linkError ? `<p class="small moodle-error" role="alert">⚠️ ${esc(m.linkError.message)} <a href="#/settings" data-action="mm-settings">להגדרות</a></p>` : '';
     const how = connected ? '' : `<div class="card mm-connect"><p class="small">${cloud && cloud.enabled && cloud.signedIn()
       ? 'עוד לא חיברת קישור לוח שנה של מודל. <a href="#/settings" data-action="mm-settings">לחיבור בהגדרות</a> — או ייבא קובץ ‎.ics‎ ידנית.'
@@ -483,11 +554,12 @@
       <div class="section-head">
         <h1>המודל שלי</h1>
         <div class="toolbar-actions">
-          ${connected ? `<button class="btn btn-primary" data-action="mm-refresh"${busy ? ' disabled' : ''}>${icon.undo}<span>${busy === 'sync' ? 'מרענן…' : 'רענן'}</span></button>` : ''}
+          ${connected ? `<button class="btn btn-primary" data-action="mm-refresh"${busy ? ' disabled' : ''}>${icon.undo}<span>${busy === 'sync' ? 'מרענן…' : 'רענן עכשיו'}</span></button>` : ''}
           <a class="btn btn-ghost" href="#/settings" data-action="mm-settings">${icon.gear}<span>הגדרות</span></a>
         </div>
       </div>
-      ${status}${err}${how}
+      ${status}${err}${how}${connected ? V.rangeHTML() : ''}
+      ${changesHTML()}
       ${m.inbox.length ? `<p class="small moodle-error">${m.inbox.length} מטלות לא שויכו לקורס. <button class="btn btn-small" data-action="mm-inbox">לשיוך</button></p>` : ''}
       <div class="mm-filters">
         <label class="small">קורס: <select data-mm="course" class="chip-select"><option value="">כל הקורסים (${all.length})</option>${courses.map((c) => `<option value="${esc(c.id)}"${c.id === page.course ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
@@ -507,6 +579,27 @@
     });
   };
 
+  const KIND = { new: '🆕 חדשה', changed: '✏️ השתנתה', gone: '👻 לא מופיעה יותר במודל', restored: '↩️ חזרה למודל' };
+  function changesHTML() {
+    const list = mo().changes || [];
+    if (!list.length) return '';
+    const n = Mo.unseen(S.state);
+    const rows = list.slice(0, 30).map((c) => {
+      const course = c.course && S.course(c.course);
+      const due = c.due ? `${u.fmtDateFull(c.due)}${c.dueTime ? ` ${c.dueTime}` : ''}` : 'בלי תאריך';
+      const prev = c.kind === 'changed' && (c.prevDue !== c.due || (c.prevTime || '') !== (c.dueTime || ''))
+        ? ` <span class="muted">(היה ${esc(c.prevDue ? `${u.fmtDateFull(c.prevDue)}${c.prevTime ? ` ${c.prevTime}` : ''}` : 'בלי תאריך')})</span>` : '';
+      const renamed = c.kind === 'changed' && c.prevTitle && c.prevTitle !== c.title ? ` <span class="muted">(היה „${esc(c.prevTitle)}”)</span>` : '';
+      return `<li class="${c.seen ? '' : 'unseen'}"><span class="mm-kind">${KIND[c.kind] || ''}</span>
+        <span dir="auto">${esc(c.title)}</span>${renamed} · ${esc(due)}${prev}
+        <span class="muted small"> · ${course ? esc(course.name) : c.unassigned ? 'לא משויך' : ''} · ${esc(timeAgo(c.at))}</span></li>`;
+    }).join('');
+    return `<details class="card mm-changes"${n.total ? ' open' : ''}><summary><b>מה השתנה</b> ${n.total ? `<span class="pill">${n.total} חדש</span>` : `<span class="muted small">(${list.length})</span>`}</summary>
+      ${n.total ? `<p class="small">${esc(Mo.unseenText(n))}. <button class="btn btn-small" data-action="mm-seen">סמן שראיתי</button></p>` : ''}
+      <ul class="mm-change-list small">${rows}</ul>
+      <p class="small muted">מטלה שנעלמה ממודל לא נמחקת — היא מסומנת "לא מופיעה יותר במודל" ואתה מחליט מה לעשות בה.</p></details>`;
+  }
+
   function onPageClick(e) {
     const a = e.target.closest('[data-action]');
     if (!a) return;
@@ -518,6 +611,7 @@
     if (act === 'mm-refresh') V.syncLink({ manual: true, inline: true });
     else if (act === 'mm-import') V.pickFile();
     else if (act === 'mm-inbox') V.showInbox();
+    else if (act === 'mm-seen') V.markSeen();
     else if (act === 'mm-toggle') {
       const was = isDone(S.findItem(id).item);
       S.toggleDone(id);

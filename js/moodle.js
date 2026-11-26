@@ -21,7 +21,13 @@
 
   // auto: sync on opening the site; periodic: also every hour while it is open; lastLink: last sync through the link;
   // linkError: { code, message, at } from the last failed link sync (shown until a sync succeeds). Never the link itself.
-  Mo.emptyState = () => ({ map: {}, uidMap: {}, ignored: {}, known: {}, inbox: [], last: null, auto: true, periodic: true, lastLink: null, linkError: null });
+  // changes: what changed in Moodle, newest first ({ at, kind: new|changed|gone|restored, uid, title, due, dueTime,
+  //   prevTitle, prevDue, prevTime, course, unassigned, seen }) — titles and dates only, at most CHANGES_MAX.
+  // lastHash / serverAt / serverCheckedAt: the last calendar taken from the server snapshot (scheduled refresh).
+  // horizon: the farthest deadline in the last calendar (how far ahead the link reaches).
+  Mo.emptyState = () => ({ map: {}, uidMap: {}, ignored: {}, known: {}, inbox: [], last: null, auto: true, periodic: true, lastLink: null, linkError: null,
+    changes: [], lastHash: null, serverAt: null, serverCheckedAt: null, horizon: null });
+  Mo.CHANGES_MAX = 100;
 
   /* ---------- the calendar link (same rules as the Edge Function and the SQL check) ---------- */
   Mo.HOST_RE = /^moodle\d{0,2}\.technion\.ac\.il$/;
@@ -46,6 +52,7 @@
     Object.keys(empty).forEach((k) => { if (!(k in st.moodle)) st.moodle[k] = empty[k]; }); // in place: callers hold a reference
     ['map', 'uidMap', 'ignored', 'known'].forEach((k) => { if (!st.moodle[k] || typeof st.moodle[k] !== 'object' || Array.isArray(st.moodle[k])) st.moodle[k] = {}; });
     if (!Array.isArray(st.moodle.inbox)) st.moodle.inbox = [];
+    if (!Array.isArray(st.moodle.changes)) st.moodle.changes = [];
     return st.moodle;
   };
 
@@ -190,6 +197,8 @@
     const today = opts.today || new Date().toISOString().slice(0, 10);
     const now = opts.now || new Date().toISOString();
     const r = { total: events.length, added: 0, updated: 0, restored: 0, gone: 0, unassigned: 0, unchanged: 0, skippedOpen: 0, ignored: 0, deletedByYou: 0, invalid: 0 };
+    const changes = [];
+    const note = (kind, snap, extra = {}) => changes.push(Object.assign({ kind, uid: snap.uid, title: snap.title, due: snap.due || '', dueTime: snap.dueTime || '' }, extra));
     const synced = Mo.syncedItems(st);
     const seen = new Set();
     let lastDue = '';
@@ -208,9 +217,10 @@
       if (hit) {
         const { item } = hit;
         const s = item.source;
-        if (s.gone) { s.gone = null; r.restored++; }
+        if (s.gone) { s.gone = null; r.restored++; note('restored', snap, { course: hit.course.id }); }
         const diff = s.title !== snap.title || s.due !== snap.due || (s.dueTime || '') !== (snap.dueTime || '');
         if (diff) {
+          note('changed', snap, { course: hit.course.id, prevTitle: s.title, prevDue: s.due || '', prevTime: s.dueTime || '' });
           const prev = s.changed || { prevTitle: s.title, prevDue: s.due, prevTime: s.dueTime || '' };
           if (item.title === s.title) item.title = snap.title; // only where you did not rename it
           if (item.due === s.due) item.due = snap.due;           // only where you did not move it
@@ -227,21 +237,30 @@
         addToCourse(st, course, snap, opts);
         inbox.delete(ev.uid);
         r.added++;
+        note('new', snap, { course: course.id });
       } else {
+        if (!inbox.has(ev.uid)) note('new', snap, { unassigned: true, category: snap.category || '' });
         inbox.set(ev.uid, Object.assign(inbox.get(ev.uid) || {}, snap, { description: String(ev.description || '').slice(0, 300) }));
         r.unassigned++;
       }
     });
 
     // gone from the feed: mark (never delete) — only deadlines from today up to the last date this feed covers
-    synced.forEach(({ item }, uid) => {
+    synced.forEach(({ item, course }, uid) => {
       const s = item.source;
       if (seen.has(uid) || s.gone || !s.due || !lastDue) return;
-      if (s.due >= today && s.due <= lastDue) { s.gone = { at: now }; r.gone++; }
+      if (s.due >= today && s.due <= lastDue) { s.gone = { at: now }; r.gone++; note('gone', Object.assign({ uid }, s), { course: course.id }); }
     });
     // unassigned events that left the feed are dropped from the list (nothing of yours is lost)
     mo.inbox = [...inbox.values()].filter((x) => seen.has(x.uid)).sort((a, b) => String(a.due).localeCompare(String(b.due)));
     mo.last = Object.assign({ at: now, source: opts.source || 'file' }, r);
+    if (lastDue) mo.horizon = lastDue;
+    // the "מה השתנה" list: newest first, capped
+    if (changes.length) {
+      mo.changes = changes.map((c) => Object.assign(c, { at: now, source: opts.source || 'file', seen: false })).reverse()
+        .concat(mo.changes).slice(0, Mo.CHANGES_MAX);
+    }
+    r.changes = changes;
     return r;
   };
 
@@ -287,6 +306,37 @@
       return ph;
     }
     return null;
+  };
+
+  /** Unseen entries of the change list, by kind. */
+  Mo.unseen = (st) => {
+    const out = { new: 0, changed: 0, gone: 0, restored: 0, total: 0 };
+    (Mo.ensure(st).changes || []).forEach((c) => { if (!c.seen) { out[c.kind] = (out[c.kind] || 0) + 1; out.total++; } });
+    return out;
+  };
+  /** "נוספו 2 מטלות חדשות · 1 שינוי מועד" */
+  Mo.unseenText = (n) => [
+    n.new && (n.new === 1 ? 'נוספה מטלה חדשה' : `נוספו ${n.new} מטלות חדשות`),
+    n.changed && (n.changed === 1 ? 'מטלה אחת השתנתה' : `${n.changed} מטלות השתנו`),
+    n.gone && (n.gone === 1 ? 'מטלה אחת לא מופיעה יותר' : `${n.gone} מטלות לא מופיעות יותר`),
+    n.restored && `${n.restored} חזרו למודל`,
+  ].filter(Boolean).join(' · ');
+  Mo.markSeen = (st) => { (Mo.ensure(st).changes || []).forEach((c) => { c.seen = true; }); };
+
+  /** What the link asks Moodle for (from its preset_time / preset_what), checked against Moodle 4.5's export code:
+   *  every range is computed when the calendar is fetched (a moving window); no date is stored in the link. */
+  Mo.RANGES = {
+    custom: { label: 'טווח מותאם', ok: true, text: 'חלון נע: בכל רענון מודל מחשב מחדש את הטווח (ברירת המחדל במודל: 5 ימים אחורה ועד 365 ימים קדימה). הקישור לא "פג" בגלל הטווח.' },
+    recentupcoming: { label: 'אירועים אחרונים ו-60 הימים הבאים', ok: true, text: 'חלון נע של 60 יום קדימה. הקישור לא פג, אבל מטלה רחוקה מ-60 יום תופיע רק כשתיכנס לטווח. מומלץ טווח מותאם.' },
+    weeknow: { label: 'השבוע הזה', ok: false, text: 'הקישור מביא רק את השבוע הנוכחי. כדאי להפיק קישור חדש עם "טווח מותאם".' },
+    weeknext: { label: 'השבוע הבא', ok: false, text: 'הקישור מביא רק את השבוע הבא. כדאי להפיק קישור חדש עם "טווח מותאם".' },
+    monthnow: { label: 'החודש הזה', ok: false, text: 'הקישור מביא רק את החודש הנוכחי. כדאי להפיק קישור חדש עם "טווח מותאם".' },
+    monthnext: { label: 'החודש הבא', ok: false, text: 'הקישור מביא רק את החודש הבא. כדאי להפיק קישור חדש עם "טווח מותאם".' },
+  };
+  Mo.rangeInfo = (preset, what) => {
+    const r = Mo.RANGES[preset] || { label: preset ? preset : 'לא ידוע', ok: !!preset, text: preset ? '' : 'לא ידוע מה הקישור מבקש (נשמר לפני העדכון). שמירה מחדש של הקישור תפתור את זה.' };
+    const whatWarn = what && what !== 'all' ? 'הקישור לא כולל "כל האירועים" — אירועים כלליים או אישיים לא יגיעו. מומלץ להפיק קישור עם "כל האירועים".' : '';
+    return Object.assign({}, r, { whatWarn, warn: r.ok === false || !!whatWarn });
   };
 
   /** Short Hebrew summary of a merge() result. */
