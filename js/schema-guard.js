@@ -193,8 +193,8 @@
   /**
    * env: { online(), getReg() → registration|null, waitController(ms) → Promise<boolean>, session {get,set}, now(), reload() }
    * Returns one of the UPDATE_MSG keys. A reload happens only after the new worker controls the page — the new
-   * worker starts with a new, empty cache (old caches are deleted on activate), so every file then comes from the
-   * new release and old and new files never mix.
+   * worker has the whole new release in its own cache (old caches are deleted on activate), so every file then comes
+   * from the new release and old and new files never mix.
    */
   G.runUpdate = async (env) => {
     if (!env.online()) return 'offline';

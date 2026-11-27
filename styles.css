@@ -2052,7 +2052,7 @@ body.adk-open { overflow: hidden; }
   color: var(--text); text-decoration: none; background: none; border: 0; font: inherit; text-align: start; cursor: pointer; }
 .set-cat:hover, .set-hit-btn:hover { background: var(--surface-3); }
 .set-cat.active { background: var(--accent-soft); color: var(--accent); }
-.set-cat.active .set-cat-t small { color: inherit; opacity: .85; }
+.set-cat.active .set-cat-t small { color: inherit; } /* full accent: at .85 opacity the hint fell below 4.5:1 (WCAG AA) */
 .set-cat:focus-visible, .set-hit-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .set-cat-ic { display: inline-grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r-sm); background: var(--surface-3); color: var(--accent); }
 .set-cat.active .set-cat-ic { background: var(--surface); }
@@ -2256,3 +2256,14 @@ button.tag { display: inline-flex; align-items: center; }
 .sem-add-form > .field { min-inline-size: 0; max-inline-size: 100%; }
 .year-input { flex-wrap: wrap; }
 .year-input input { max-inline-size: 100%; }
+
+/* ---------- keyboard focus is never hidden behind fixed bars (WCAG 2.4.11) ----------
+ * When focus (or a scroll into view) moves to something on the page, the browser keeps a margin around it: below the
+ * sticky header (--ct-head-h, its measured height incl. the safe area, set in js/app.js), above the bottom bar (phones)
+ * and above the adhkar cards (--ct-adk-h, measured in js/views/adhkar.js). Only on the page content: a control in the
+ * sticky header itself must not make the page jump to the top. The fallbacks apply until the script has measured. */
+:root { --ct-nav-h: 0px; }
+@media (max-width: 767px) {
+  :root { --ct-nav-h: calc(64px + env(safe-area-inset-bottom) + 8px); }
+}
+#main * { scroll-margin-block: calc(var(--ct-head-h, calc(72px + env(safe-area-inset-top))) + 8px) max(var(--ct-nav-h), var(--ct-adk-h, 0px)); }

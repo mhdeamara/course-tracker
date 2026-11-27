@@ -279,6 +279,15 @@
     { label: tx('lang.switch'), fn: () => { I18N.setLang(I18N.lang() === 'he' ? 'en' : 'he'); const b = document.getElementById('more-btn'); if (b) b.focus(); } },
   ].filter(Boolean).filter((x, i, a) => x !== '-' || (i > 0 && i < a.length - 1));
   app.renderHeader = () => { renderHeader(); app.rerender(); };
+  /** --ct-head-h = the sticky header's height (it wraps to two rows on phones, plus the safe area), so the page scrolls a
+   * focused element below it (scroll margin in styles.css) instead of leaving keyboard focus behind the header. */
+  function keepHeaderClear() {
+    const h = document.getElementById('app-header');
+    const set = () => document.documentElement.style.setProperty('--ct-head-h', Math.ceil(h.getBoundingClientRect().height) + 'px');
+    if (typeof ResizeObserver === 'function') new ResizeObserver(set).observe(h);
+    window.addEventListener('resize', set);
+    set();
+  }
 
   /* ---------- global search ---------- */
   function searchAll(q) {
@@ -481,6 +490,7 @@
     initLockBar();
     await CT.backup.init();
     renderHeader();
+    keepHeaderClear();
     I18N.onChange(onLangChange);
     S.subscribe(() => app.rerender());
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);

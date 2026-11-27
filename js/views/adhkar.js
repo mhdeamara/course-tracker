@@ -317,8 +317,21 @@
   };
   const toastBox = () => {
     let box = document.getElementById('adk-toasts');
-    if (!box) { box = document.createElement('div'); box.id = 'adk-toasts'; box.setAttribute('aria-live', 'polite'); CT.i18n.localized(box); document.body.appendChild(box); }
+    if (!box) { box = document.createElement('div'); box.id = 'adk-toasts'; box.setAttribute('aria-live', 'polite'); CT.i18n.localized(box); document.body.appendChild(box); keepClear(box); }
     return box;
+  };
+  /* The cards sit over the bottom of the page. --ct-adk-h = the band they cover, so the page scrolls a focused field or
+   * button above them (scroll margin in styles.css) instead of letting keyboard focus hide behind a card. */
+  const keepClear = (box) => {
+    const set = () => {
+      const r = box.getBoundingClientRect();
+      const h = box.childElementCount && r.height ? Math.max(0, Math.ceil(window.innerHeight - r.top) + 8) : 0;
+      document.documentElement.style.setProperty('--ct-adk-h', h + 'px');
+    };
+    if (typeof ResizeObserver === 'function') new ResizeObserver(set).observe(box);
+    new MutationObserver(set).observe(box, { childList: true });
+    window.addEventListener('resize', set);
+    set();
   };
   /**
    * A small card in the corner: never blocks the page. By default it hides by itself (pauses while hovered/focused);
