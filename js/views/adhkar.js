@@ -7,18 +7,19 @@
   const { u, ui, store: S } = CT;
   const A = CT.adhkar;
   const esc = u.esc, icon = u.icon;
+  const L = (k, p) => CT.i18n.t(k, p), LX = (k, p) => CT.i18n.tx(k, p);
   const V = {};
   CT.views.adhkar = V;
 
   const MEM_KEY = 'ct.adhkar'; // per device: { seen: {m, e}, lastGen, lastGenId, muted, notify }
   const NAMES = { m: 'أذكار الصباح', e: 'أذكار المساء', g: 'أذكار عامة' };
-  const HE = { m: 'אזכרות הבוקר', e: 'אזכרות הערב', g: 'אזכרות כלליות' };
   const st = () => S.state;
   const cfg = () => A.cfg(st());
   const ptsAdk = () => { try { return CT.game.cfg(st()).pts.adk; } catch (e) { return 5; } };
   const motionOk = () => !(CT.app && CT.app.reducedMotion && CT.app.reducedMotion());
   const tm = (min) => `<span class="num-ltr">${A.fmt(min)}</span>`;
-  const rng = (a, b) => `<span class="num-ltr">${A.fmt(a)}–${A.fmt(b)}</span>`;
+  // a time range; built from formatted numbers only (trusted markup for th())
+  const rng = (a, b) => CT.i18n.html(`<span class="num-ltr">${u.esc(A.fmt(a))}–${u.esc(A.fmt(b))}</span>`);
   const arDigits = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
   /* ---------- content ---------- */
@@ -33,7 +34,7 @@
     return loading;
   };
   V.doc = () => doc;
-  const whenLoaded = (fn) => { if (doc) fn(); else V.load().then(fn).catch(() => ui.toast('לא הצלחתי לטעון את קובץ האזכרות', { error: true })); };
+  const whenLoaded = (fn) => { if (doc) fn(); else V.load().then(fn).catch(() => ui.toast(LX('adkp.loadErr'), { error: true })); };
 
   /* ---------- per-device memory ---------- */
   const mem = () => { try { return Object.assign({ seen: {} }, JSON.parse(localStorage.getItem(MEM_KEY)) || {}); } catch (e) { return { seen: {} }; } };
@@ -75,11 +76,11 @@
   const sourceHTML = (it) => {
     const tz = doc.sources.tanzil;
     return `<div class="adk-src">
-        <p><span class="adk-src-k">המקור:</span> <span lang="ar" dir="rtl">${esc(it.source)}</span></p>
-        <p><span class="adk-src-k">דרגה:</span> <span lang="ar" dir="rtl">${esc(it.grade)}</span></p>
-        ${it.hisn ? `<p><a href="${esc(it.url)}" target="_blank" rel="noopener"><span lang="ar" dir="rtl">حصن المسلم</span> ${it.hisn}</a></p>` : ''}
-        ${it.quran ? `<p>נוסח הקוראן: <a href="${esc(tz.url)}" target="_blank" rel="noopener">Tanzil Project</a> · ${esc(tz.license)}</p>` : ''}
-        ${it.note ? `<p class="adk-note">${esc(it.note)}</p>` : ''}
+        <p><span class="adk-src-k">${L('adkp.source')}</span> <span lang="ar" dir="rtl">${esc(it.source)}</span></p>
+        <p><span class="adk-src-k">${L('adkp.grade')}</span> <span lang="ar" dir="rtl">${esc(it.grade)}</span></p>
+        ${it.hisn ? `<p><a href="${esc(u.safeUrl(it.url))}" target="_blank" rel="noopener"><span lang="ar" dir="rtl">حصن المسلم</span> <span class="num-ltr">${esc(it.hisn)}</span></a></p>` : ''}
+        ${it.quran ? `<p>${L('adkp.quranText')} <a href="${esc(u.safeUrl(tz.url))}" target="_blank" rel="noopener">Tanzil Project</a> · ${esc(tz.license)}</p>` : ''}
+        ${it.note ? `<p class="adk-note" lang="he" dir="rtl">${esc(it.note)}</p>` : ''}
       </div>`;
   };
   const ring = (n, total) => {
@@ -98,10 +99,10 @@
     if (R.i >= items.length) { // finished
       const streak = R.p === 'g' ? 0 : A.streak(st(), R.p);
       el.querySelector('.adk-main').innerHTML = `<div class="adk-done">
-          <div class="adk-done-ic" aria-hidden="true">✓</div>
-          <h3><span lang="ar" dir="rtl">${NAMES[R.p]}</span> — ${R.p === 'g' ? 'סיימת לעבור על הרשימה' : 'הושלם'}</h3>
-          ${streak > 1 ? `<p class="muted">${streak} ימים ברצף</p>` : ''}
-          <button class="btn btn-primary" data-adk="close">סגירה</button>
+          <div class="adk-done-ic" aria-hidden="true">${icon.check}</div>
+          <h3><span lang="ar" dir="rtl">${NAMES[R.p]}</span> — ${L(R.p === 'g' ? 'adkp.listDone' : 'adkd.done')}</h3>
+          ${streak > 1 ? `<p class="muted">${L('adkd.streak', { n: streak })}</p>` : ''}
+          <button class="btn btn-primary" data-adk="close">${L('adks.close')}</button>
         </div>`;
       el.querySelector('.adk-foot').hidden = true;
       el.querySelector('.adk-pos').textContent = `${prog.full} / ${prog.total}`;
@@ -120,7 +121,7 @@
     const btn = el.querySelector('.adk-count');
     btn.innerHTML = `${ring(n, it.count)}<span class="adk-n"><b>${n}</b><small>/ ${it.count}</small></span>`;
     btn.classList.toggle('full', n >= it.count);
-    btn.setAttribute('aria-label', `ספירה: ${n} מתוך ${it.count}. הקשה מוסיפה אחת`);
+    btn.setAttribute('aria-label', LX('adkp.countLabel', { n, m: it.count }));
     el.querySelector('[data-adk=prev]').disabled = R.i === 0;
     el.querySelector('.adk-main').scrollTop = 0;
   };
@@ -134,7 +135,7 @@
     if (before >= it.count) { go(R.i + 1); return; } // already full: a tap moves on
     // the tap that finishes the morning/evening is an undo step (Ctrl+Z takes the completion — and its points — back)
     const fin = A.wouldFinish(st(), doc, R.p, it.id);
-    const res = S.commit(fin ? (R.p === 'm' ? 'השלמת אזכרות בוקר' : 'השלמת אזכרות ערב') : 'אזכרה', (s) => A.tap(s, doc, R.p, it.id), { undo: fin, silent: true });
+    const res = S.commit(LX(fin ? (R.p === 'm' ? 'adkp.u.doneM' : 'adkp.u.doneE') : 'adkp.u.tap'), (s) => A.tap(s, doc, R.p, it.id), { undo: fin, silent: true });
     if (!res) return;
     buzz(res.full ? [18, 40, 18] : 10);
     paint();
@@ -161,21 +162,22 @@
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-modal', 'true');
     el.setAttribute('aria-labelledby', 'adk-title');
+    CT.i18n.localized(el); // the frame follows the interface language; the adhkar keep lang=ar dir=rtl
     el.innerHTML = `
       <header class="adk-head">
-        <button class="icon-btn" data-adk="close" aria-label="סגירה">${icon.close}</button>
+        <button class="icon-btn" data-adk="close" aria-label="${L('adks.close')}">${icon.close}</button>
         <div class="adk-titles"><h2 id="adk-title" lang="ar" dir="rtl">${NAMES[p]}</h2><span class="adk-pos muted small"></span></div>
-        <div class="adk-font" role="group" aria-label="גודל הטקסט">
-          <button class="icon-btn" data-adk="smaller" aria-label="טקסט קטן יותר">א−</button>
-          <button class="icon-btn" data-adk="bigger" aria-label="טקסט גדול יותר">א+</button>
+        <div class="adk-font" role="group" aria-label="${L('adkp.textSize')}">
+          <button class="icon-btn" data-adk="smaller" aria-label="${L('adkp.smaller')}"><span lang="ar" aria-hidden="true">ع−</span></button>
+          <button class="icon-btn" data-adk="bigger" aria-label="${L('adkp.bigger')}"><span lang="ar" aria-hidden="true">ع+</span></button>
         </div>
       </header>
       <div class="adk-bar" aria-hidden="true"><i></i></div>
       <div class="adk-main"></div>
       <footer class="adk-foot">
-        <button class="btn adk-nav" data-adk="prev" aria-label="הקודם">→ הקודם</button>
+        <button class="btn adk-nav" data-adk="prev"><span class="ic-back" aria-hidden="true">${icon.chevSide}</span> ${L('adkp.prev')}</button>
         <button class="adk-count" data-adk="tap"></button>
-        <button class="btn adk-nav" data-adk="next" aria-label="הבא">הבא ←</button>
+        <button class="btn adk-nav" data-adk="next">${L('adkp.next')} <span class="ic-fwd" aria-hidden="true">${icon.chevSide}</span></button>
       </footer>`;
     document.body.appendChild(el);
     document.body.classList.add('adk-open');
@@ -190,7 +192,7 @@
       else if (a === 'next') go(Math.min(A.group(doc, R.p).length, R.i + 1));
       else if (a === 'smaller' || a === 'bigger') {
         const f = Math.round(Math.max(0.8, Math.min(2, (Number(cfg().font) || 1) + (a === 'bigger' ? 0.1 : -0.1))) * 10) / 10;
-        S.commit('גודל טקסט', (s) => A.set(s, 'font', f), { undo: false, silent: true });
+        S.commit(LX('adkp.u.font'), (s) => A.set(s, 'font', f), { undo: false, silent: true });
         paint();
       }
     });
@@ -254,18 +256,18 @@
     if (!b) return;
     const p = b.dataset.p;
     if (b.dataset.adkHome === 'open') V.open(p);
-    else if (b.dataset.adkHome === 'mark') S.commit('אזכרות סומנו', (s) => A.markDone(s, p));
+    else if (b.dataset.adkHome === 'mark') S.commit(LX('adkp.u.mark'), (s) => A.markDone(s, p));
   });
 
   /* ---------- the "אזכרות" page ---------- */
   V.render = (main) => {
     if (!A.on(st())) {
-      main.innerHTML = `<div class="adk-page-head"><h1>אזכרות</h1></div>
-        <section class="card"><p>האזכרות כבויות. אפשר להפעיל אותן ב<a href="#/settings/adhkar">הגדרות</a>.</p></section>`;
+      main.innerHTML = `<div class="adk-page-head"><h1>${L('adks.title')}</h1></div>
+        <section class="card">${ui.empty(`${L('adkp.off')} <a href="#/settings/adhkar">${L('adkp.toSettings')}</a>`)}</section>`;
       return;
     }
     if (!doc) {
-      main.innerHTML = `<div class="adk-page-head"><h1>אזכרות</h1></div><section class="card"><p class="muted">${loadErr ? 'לא הצלחתי לטעון את קובץ האזכרות.' : 'טוען…'}</p></section>`;
+      main.innerHTML = `<div class="adk-page-head"><h1>${L('adks.title')}</h1></div><section class="card"><p class="muted" role="status">${L(loadErr ? 'adkp.loadErr' : 'adkp.loading')}</p></section>`;
       if (!loadErr) V.load().then(() => CT.app.rerender()).catch(() => CT.app.rerender());
       return;
     }
@@ -273,24 +275,24 @@
     const row = (p) => {
       const prog = A.progress(st(), doc, p);
       const streak = p === 'g' ? 0 : A.streak(st(), p);
-      const when = p === 'g' ? 'לאורך היום' : rng(w[p][0], w[p][1]);
+      const when = p === 'g' ? L('adkp.allDay') : String(rng(w[p][0], w[p][1]));
       return `<li class="adk-row${now === p ? ' now' : ''}">
-          <div><b lang="ar" dir="rtl">${NAMES[p]}</b> <span class="muted small adk-sub">${HE[p]} · ${when}</span>
-            <p class="small muted">${prog.done ? 'הושלם היום ✓' : `${prog.full} מתוך ${prog.total}`}${streak > 1 ? ` · ${streak} ימים ברצף` : ''}</p></div>
-          <button class="btn${now === p && !prog.done ? ' btn-primary' : ''}" data-adk-home="open" data-p="${p}">${prog.done ? 'לפתוח' : prog.full ? 'להמשיך' : 'להתחיל'}</button>
+          <div><b lang="ar" dir="rtl">${NAMES[p]}</b> <span class="muted small adk-sub">${L(p === 'g' ? 'adkp.general' : 'adkd.label.' + p)} · ${when}</span>
+            <p class="small muted">${prog.done ? L('adkp.doneToday') : L('adkd.progress', { n: prog.full, m: prog.total })}${streak > 1 ? ` · ${L('adkd.streak', { n: streak })}` : ''}</p></div>
+          <button class="btn${now === p && !prog.done ? ' btn-primary' : ''}" data-adk-home="open" data-p="${p}">${L(prog.done ? 'adkp.open' : prog.full ? 'adkd.continue' : 'adkd.start')}</button>
         </li>`;
     };
     const t = w.times;
-    main.innerHTML = `<div class="adk-page-head"><h1>אזכרות</h1><a class="btn" href="#/settings/adhkar">${icon.gear} הגדרות</a></div>
+    main.innerHTML = `<div class="adk-page-head"><h1>${L('adks.title')}</h1><a class="btn" href="#/settings/adhkar">${icon.gear} ${L('adkp.settings')}</a></div>
       <section class="card"><ul class="adk-rows">${row('m')}${row('e')}${row('g')}</ul>
-        ${w.auto && t ? `<p class="small muted adk-times">זמני היום (${esc((A.CITIES[c.city] || {}).name || '')}, מחושב במכשיר): שחר ${tm(t.fajr)} · זריחה ${tm(t.sunrise)} · צהריים ${tm(t.dhuhr)} · עסר ${tm(t.asr)} · שקיעה ${tm(t.maghrib)} · עשא ${tm(t.isha)}</p>` : ''}
+        ${w.auto && t ? `<p class="small muted adk-times">${L('adkp.times', { city: c.city === 'custom' ? LX('adkp.customLoc') : LX('adks.city.' + (A.CITIES[c.city] ? c.city : 'haifa')) })} ${L('adkp.fajr')} ${tm(t.fajr)} · ${L('adkp.sunrise')} ${tm(t.sunrise)} · ${L('adkp.dhuhr')} ${tm(t.dhuhr)} · ${L('adks.asr')} ${tm(t.asr)} · ${L('adkp.maghrib')} ${tm(t.maghrib)} · ${L('adkp.isha')} ${tm(t.isha)}</p>` : ''}
       </section>
       <section class="card small muted adk-about">
-        <p>${esc(doc.rules)}</p>
-        <p>מקורות: <a href="${esc(doc.sources.hisn.url)}" target="_blank" rel="noopener" lang="ar">${esc(doc.sources.hisn.name)}</a> ·
+        <p lang="he" dir="rtl">${esc(doc.rules)}</p>
+        <p>${L('adkp.sources')} <a href="${esc(doc.sources.hisn.url)}" target="_blank" rel="noopener" lang="ar">${esc(doc.sources.hisn.name)}</a> ·
           <a href="${esc(doc.sources.sunnah.url)}" target="_blank" rel="noopener">sunnah.com</a> ·
           <a href="${esc(doc.sources.dorar.url)}" target="_blank" rel="noopener" lang="ar">${esc(doc.sources.dorar.name)}</a> ·
-          נוסח הקוראן: <a href="${esc(doc.sources.tanzil.url)}" target="_blank" rel="noopener">Tanzil Project</a> (${esc(doc.sources.tanzil.license)})</p>
+          ${L('adkp.quranText')} <a href="${esc(doc.sources.tanzil.url)}" target="_blank" rel="noopener">Tanzil Project</a> (${esc(doc.sources.tanzil.license)})</p>
       </section>`;
   };
 
@@ -315,7 +317,7 @@
   };
   const toastBox = () => {
     let box = document.getElementById('adk-toasts');
-    if (!box) { box = document.createElement('div'); box.id = 'adk-toasts'; box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
+    if (!box) { box = document.createElement('div'); box.id = 'adk-toasts'; box.setAttribute('aria-live', 'polite'); CT.i18n.localized(box); document.body.appendChild(box); }
     return box;
   };
   /**

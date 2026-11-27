@@ -35,7 +35,9 @@
   };
 
   const P = {
-    wave: () => '<path d="M6 30c5-10 10-10 15 0s10 10 15 0 10-10 15 0 8 8 8 8" class="a-s"/><path d="M6 42c5-6 10-6 15 0s10 6 15 0 10-6 15 0" class="a-s a-soft"/><circle cx="48" cy="16" r="5" class="a-f a-soft"/>',
+    // a continuous signal and its samples x[n] on a time axis
+    wave: () => '<path d="M6 40h52" class="a-s a-faint-s"/><path d="M6 28c5-12 10-12 15 0s10 12 15 0 10-12 15 0 7 7 7 7" class="a-s"/>' +
+      [11, 21, 31, 41, 51].map((x, i) => { const y = [19, 28, 37, 28, 19][i]; return `<path d="M${x} 40V${y + 3}" class="a-s a-faint-s"/><circle cx="${x}" cy="${y}" r="2.6" class="a-f a-soft"/>`; }).join(''),
     circuit: () => '<path d="M6 22h14l4-6 6 12 6-12 4 6h18" class="a-s"/><path d="M14 22v22h36V22M32 44v12" class="a-s a-soft"/><circle cx="14" cy="44" r="3" class="a-f"/><circle cx="50" cy="44" r="3" class="a-f"/><rect x="26" y="40" width="12" height="8" rx="2" class="a-f a-soft"/>',
     tree: () => '<path d="M32 14L18 32M32 14l14 18M18 32l-7 16M18 32l7 16M46 32l7 16" class="a-s a-soft"/><circle cx="32" cy="14" r="5" class="a-f"/><circle cx="18" cy="32" r="4.5" class="a-f"/><circle cx="46" cy="32" r="4.5" class="a-f"/><circle cx="11" cy="48" r="3.5" class="a-f a-soft"/><circle cx="25" cy="48" r="3.5" class="a-f a-soft"/><circle cx="53" cy="48" r="3.5" class="a-f a-soft"/>',
     dist: () => '<path d="M6 50c10 0 14-32 26-32s16 32 26 32" class="a-f a-faint"/><path d="M6 50c10 0 14-32 26-32s16 32 26 32" class="a-s"/><path d="M32 18v32" class="a-s a-dash"/><rect x="12" y="44" width="5" height="6" rx="1" class="a-f a-soft"/><rect x="45" y="40" width="5" height="10" rx="1" class="a-f a-soft"/>',

@@ -80,7 +80,7 @@
 
   /* pages whose interface is fully translated: #main follows the interface language there; elsewhere it stays
    * Hebrew/RTL content until those pages are translated */
-  const TRANSLATED = new Set(['', 'courses', 'course', 'moodle', 'ai', 'settings']);
+  const TRANSLATED = new Set(['', 'courses', 'course', 'moodle', 'ai', 'settings', 'grades', 'catalog', 'semesters', 'stats', 'schedule', 'review', 'archive', 'xp', 'adhkar']);
   function markMain(main, translated) {
     if (translated) { main.removeAttribute('data-ct-content'); I18N.localized(main); }
     else { main.removeAttribute('data-ct-localized'); I18N.content(main); }
@@ -145,7 +145,7 @@
     const [cls, text] = CT.cloud.label();
     const email = CT.cloud.email();
     return `<span class="sb-dot ${cls === 'ok' ? 'ok' : cls === 'bad' ? 'bad' : cls === 'busy' ? 'busy' : 'warn'}"></span>
-      <span class="sb-sync"><b>☁️ ${esc(text)}</b>${email ? `<span dir="ltr">${esc(email)}</span>` : ''}</span>`;
+      <span class="sb-sync"><b>${esc(text)}</b>${email ? `<span dir="ltr">${esc(email)}</span>` : ''}</span>`;
   };
   const paintSyncDot = () => {
     const dot = document.getElementById('sync-dot');

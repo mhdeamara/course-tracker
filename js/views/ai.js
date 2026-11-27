@@ -124,6 +124,8 @@
       </div>`;
   }
 
+  let modelsOpen = false; // the model picker stays folded unless opened (kept across redraws)
+  if (typeof document !== 'undefined') document.addEventListener('toggle', (e) => { if (e.target.classList && e.target.classList.contains('ai-models-card')) modelsOpen = e.target.open; }, true);
   function sideHTML() {
     const s = statusOf();
     const signed = s !== 'off' && s !== 'signin';
@@ -140,9 +142,8 @@
           <button class="btn btn-small btn-ghost" data-action="ai-reload"${info.state === 'loading' ? ' disabled' : ''}>${t('ai.reload')}</button>
         </div>` : ''}
       </section>
-      <section class="card ai-side-card" aria-labelledby="ai-m-h"><h2 id="ai-m-h">${t('ai.side.models')}</h2>${modelsHTML()}</section>
+      <details class="card ai-side-card ai-models-card"${modelsOpen ? ' open' : ''}><summary><span id="ai-m-h">${t('ai.side.models')}</span><span class="muted small">${esc(P.short(V.settings().chatModel))}</span></summary>${modelsHTML()}</details>
       <section class="card ai-side-card ai-privacy" aria-labelledby="ai-p-h"><h2 id="ai-p-h">${t('ai.side.privacy')}</h2>
-        <p class="small">${icon.info}<span>${t('aic.readOnly')}</span></p>
         <p class="small muted">${t('ai.privacy', { provider: P.name })}</p></section>`;
   }
 

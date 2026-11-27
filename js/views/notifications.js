@@ -214,7 +214,7 @@
     export: () => CT.backup.exportFile(),
     snooze: () => CT.backup.snooze(),
     regrant: () => CT.backup.regrant(),
-    'xp-resume': () => S.commit('חזרה מהשהיה', (st) => CT.game.resume(st)),
+    'xp-resume': () => S.commit(I18N.tx('xps.u.resume'), (st) => CT.game.resume(st)),
     'xp-log': () => go('#/xp?tab=log'),
     'xp-pen-seen': (arg) => { CT.views.xp.penSeen(arg); CT.app.rerender(); },
     'xp-five': (arg) => { V.close(); if (CT.focus) CT.focus.start(arg, 5); },

@@ -246,6 +246,13 @@
     if (n === -1) return tx('rel.yesterday');
     return n < 0 ? tx('rel.late', { n: -n }) : tx('rel.in', { n });
   };
+  /** Study time for display: "45 min" / "1 h 20 min", in the interface language (stored minutes never change). */
+  ui.minutes = (m) => {
+    m = Math.round(Number(m) || 0);
+    if (m < 60) return tx('fmt.min', { n: m });
+    const h = Math.floor(m / 60), r = m % 60;
+    return r ? tx('fmt.hm', { h, m: r }) : tx('fmt.h', { h });
+  };
   ui.courseDot = (c) => `<span class="dot" style="background:${u.esc(c.color)}"></span>`;
   ui.empty = (msg) => `<div class="empty">${msg}</div>`;
   /** "הושלם · 87" style badge for a finished course ('' while in progress). */

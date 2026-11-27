@@ -2,41 +2,42 @@
 (function (CT) {
   'use strict';
   const { u, ui, stats } = CT;
-  const S = CT.store;
+  const S = CT.store, I = CT.i18n;
   const esc = u.esc, icon = u.icon;
+  const t = (k, p) => I.t(k, p), tx = (k, p) => I.tx(k, p);
   const V = {};
   CT.views = CT.views || {};
   CT.views.archive = V;
 
   V.render = (root) => {
     const st = S.state;
-    const groups = [...st.semesters, { id: '', name: 'ללא סמסטר' }].map((sem) => ({
+    const groups = [...st.semesters, { id: '', name: '' }].map((sem) => ({
       sem,
       active: st.courses.filter((c) => (c.semesterId || '') === sem.id && !c.archived),
       archived: st.courses.filter((c) => (c.semesterId || '') === sem.id && c.archived),
     })).filter((g) => g.active.length || g.archived.length);
 
     root.innerHTML = `
-      <div class="archive">
-        <h1>ארכיון</h1>
-        <p class="muted">קורסים בארכיון לא מופיעים בדשבורד ובסטטיסטיקות, אבל כל הנתונים נשמרים ואפשר לשחזר אותם בכל רגע.</p>
+      <div class="archive page-wide">
+        <header class="pg-head"><h1>${t('arc.title')}</h1>
+        <p class="muted">${t('arc.intro')}</p></header>
         ${groups.map(({ sem, active, archived }) => `
-          <section class="card arch-sem" data-sem="${sem.id}">
+          <section class="card arch-sem" data-sem="${esc(sem.id)}">
             <div class="section-head" style="margin-top:0">
-              <h2>${esc(sem.name)}</h2>
-              ${active.length ? `<button class="btn" data-action="archive-sem">${icon.archive} העבר את כל ${active.length} הקורסים לארכיון</button>` : ''}
+              <h2>${sem.id ? `<span dir="auto">${esc(sem.name)}</span>` : t('gpa.noSem')}</h2>
+              ${active.length ? `<button class="btn" data-action="archive-sem">${icon.archive} ${t('arc.archiveAll', { n: active.length })}</button>` : ''}
             </div>
             ${archived.length ? `<ul class="arch-list">${archived.map((c) => {
               const p = stats.courseProgress(c);
-              return `<li data-id="${c.id}" style="--c:${esc(c.color)}">
-                ${ui.courseDot(c)} <a href="#/course/${c.id}" dir="auto">${esc(c.name)}</a>
-                <span class="muted small">${c.number ? esc(c.number) + ' · ' : ''}${p.pct}% הושלם</span>
+              return `<li data-id="${esc(c.id)}" style="--c:${esc(c.color)}">
+                ${ui.courseDot(c)} <a href="#/course/${esc(c.id)}" dir="auto">${esc(c.name)}</a>
+                <span class="muted small">${c.number ? `<span dir="ltr">${esc(c.number)}</span> · ` : ''}${t('arc.pct', { n: p.pct })}</span>
                 <span class="arch-actions">
-                  <button class="btn btn-small" data-action="restore">שחזר לדשבורד</button>
-                  <button class="icon-btn" data-action="delete" aria-label="מחק לצמיתות">${icon.trash}</button>
+                  <button class="btn btn-small" data-action="restore">${t('arc.restore')}</button>
+                  <button class="icon-btn" data-action="delete" aria-label="${t('arc.deleteName', { name: I.iso(c.name) })}">${icon.trash}</button>
                 </span></li>`;
-            }).join('')}</ul>` : '<p class="muted small">אין קורסים בארכיון מהסמסטר הזה.</p>'}
-          </section>`).join('') || ui.empty('אין עדיין קורסים.')}
+            }).join('')}</ul>` : `<p class="muted small">${t('arc.noneHere')}</p>`}
+          </section>`).join('') || ui.empty(t('cp.emptyAll'))}
       </div>`;
 
     root.querySelector('.archive').addEventListener('click', async (e) => {
@@ -45,15 +46,15 @@
       const id = a.closest('li') && a.closest('li').dataset.id;
       const semId = a.closest('[data-sem]').dataset.sem;
       if (a.dataset.action === 'archive-sem') {
-        S.commit('העברת סמסטר לארכיון', (s) => s.courses.forEach((c) => { if ((c.semesterId || '') === semId) c.archived = true; }));
-        ui.toast('הסמסטר הועבר לארכיון', { action: { label: 'בטל', fn: S.undo } });
+        S.commit(tx('arc.u.sem'), (s) => s.courses.forEach((c) => { if ((c.semesterId || '') === semId) c.archived = true; }));
+        ui.toast(tx('arc.semDone'), { action: { label: tx('common.undo'), fn: S.undo } });
       }
-      if (a.dataset.action === 'restore') S.commit('שחזור קורס', () => { S.course(id).archived = false; });
+      if (a.dataset.action === 'restore') S.commit(tx('arc.u.restore'), () => { S.course(id).archived = false; });
       if (a.dataset.action === 'delete') {
         const c = S.course(id);
-        if (!(await ui.confirm(`למחוק לצמיתות את "${c.name}"?`, 'מחק', true))) return;
-        S.commit('מחיקת קורס', (s) => { s.courses = s.courses.filter((x) => x.id !== id); });
-        ui.toast('נמחק', { action: { label: 'בטל', fn: S.undo } });
+        if (!(await ui.confirm(tx('arc.deleteQ', { name: I.iso(c.name) }), tx('cp.deleteOk'), true, { localized: true }))) return;
+        S.commit(tx('sem.u.delCourse'), (s) => { s.courses = s.courses.filter((x) => x.id !== id); });
+        ui.toast(tx('sem.deleted'), { action: { label: tx('common.undo'), fn: S.undo } });
       }
     });
   };

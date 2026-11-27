@@ -8,7 +8,7 @@
   const S = CT.store, M = CT.model, I = CT.i18n;
   const esc = u.esc, icon = u.icon;
   const t = (k, p) => I.t(k, p), tx = (k, p) => I.tx(k, p);
-  const th = (k, p) => I.th(k, p); // parameters that are already safe HTML
+  const th = (k, p) => I.th(k, p); // markup parameters only through I.html / I.bdi / I.ltr
   const V = {};
   CT.views = CT.views || {};
   CT.views.settings = V;
@@ -253,15 +253,15 @@
     }
     const si = K.sourceInfo ? K.sourceInfo() : null;
     const issues = K.ready ? (K.knownIssues || []).map((k) => k.text).concat(K.verify || []) : [];
-    const fb = K.ready && K.fallback ? (K.fallback === 'none-chosen' ? th('set.cat.fbNone', { label: `<bdi>${esc(K.label)}</bdi>` }) : th('set.cat.fbOther', { want: `<bdi>${esc(K.yearLabel(K.wantedYear))}</bdi>`, label: `<bdi>${esc(K.label)}</bdi>` })) : '';
+    const fb = K.ready && K.fallback ? (K.fallback === 'none-chosen' ? th('set.cat.fbNone', { label: I.bdi(K.label) }) : th('set.cat.fbOther', { want: I.bdi(K.yearLabel(K.wantedYear)), label: I.bdi(K.label) })) : '';
     return group('set-catalog', t('set.cat.title'), `
       <p class="set-desc">${t('set.cat.hint')}</p>
       ${row(t('set.cat.faculty'), facSel, { forId: 'set-fac' })}
       ${row(t('set.cat.year'), yearSel, { forId: 'set-year' })}
       ${fb ? `<p class="set-warn" role="alert">${icon.alert}<span>${fb}</span></p>` : ''}
-      ${K.ready ? `<p class="set-desc">${th('set.cat.track', { name: `<bdi>${esc(K.trackName)}</bdi>`, id: `<span dir="ltr">${esc(K.track)}</span>` })}</p>` : ''}
+      ${K.ready ? `<p class="set-desc">${th('set.cat.track', { name: I.bdi(K.trackName), id: I.ltr(K.track) })}</p>` : ''}
       ${picks}
-      ${si ? `<p class="set-desc cat-source">${th('set.cat.source', { text: `<bdi>${esc(si.text)}</bdi>`, updated: `<span dir="ltr">${esc(si.updated)}</span>` })} · <a href="${esc(u.safeUrl ? u.safeUrl(si.url) : si.url)}" target="_blank" rel="noopener"><bdi>${esc(si.title)}</bdi></a></p>` : ''}
+      ${si ? `<p class="set-desc cat-source">${th('set.cat.source', { text: I.bdi(si.text), updated: I.ltr(si.updated) })} · <a href="${esc(u.safeUrl ? u.safeUrl(si.url) : si.url)}" target="_blank" rel="noopener"><bdi>${esc(si.title)}</bdi></a></p>` : ''}
       ${issues.length ? `<details class="cat-issues"><summary>${t('set.cat.issues', { n: issues.length })}</summary><ul>${issues.map((x) => `<li dir="auto">${esc(x)}</li>`).join('')}</ul></details>` : ''}
       <a class="btn btn-small btn-ghost" href="#/catalog">${t('set.cat.open')}</a>`);
   }
@@ -284,7 +284,7 @@
     const last = st.settings.lastBackup;
     const lastIso = last ? u.isoDate(new Date(last)) : null;
     const lastText = lastIso ? t('set.bk.last', { date: ui.date(lastIso, 'full'), rel: relPast(lastIso) }) : t('set.bk.never');
-    const name = b.handle && b.handle.name ? `<bdi dir="ltr">${esc(b.handle.name)}</bdi>` : '';
+    const name = b.handle && b.handle.name ? I.bdi(b.handle.name, 'ltr') : '';
     const auto = !b.supported
       ? `<p class="set-desc">${t('set.bk.autoUnsupported')}</p>`
       : b.status === 'granted'

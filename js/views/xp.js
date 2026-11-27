@@ -9,11 +9,44 @@
   const HIST_PAGE = 60;
   let histShown = HIST_PAGE;
 
-  const fmt = (n) => Math.round(n).toLocaleString('he-IL');
+  const L = (k, p) => CT.i18n.t(k, p), LX = (k, p) => CT.i18n.tx(k, p);
+  const fmt = (n) => (CT.ui && CT.ui.num ? CT.ui.num(Math.round(n)) : String(Math.round(n)));
   const signed = (n) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '0');
   const motionOk = () => !(CT.app && CT.app.reducedMotion && CT.app.reducedMotion());
   const look = () => (S.state.game && S.state.game.look) || {};
   const on = () => G.cfg(S.state).enabled !== false;
+
+  /* ---------- built-in game content in the interface language ----------
+   * Stored ids, labels, reasons and chosen titles never change. A known built-in Hebrew string (stored by game.js)
+   * is shown through its key; anything else (item titles, course names, prize names) is shown as it is. */
+  let KNOWN = null;
+  const known = () => {
+    if (KNOWN) return KNOWN;
+    KNOWN = new Map();
+    G.CHALLENGES.forEach((c) => KNOWN.set(c.name, 'game.ch.' + c.id));
+    G.BADGES.forEach((b) => KNOWN.set(b.name, 'game.ach.' + b.id + '.name'));
+    // stored reasons/labels written by game.js
+    Object.entries({ 'בזמן': 'onTime', 'מוקדם': 'early', 'תקרה יומית': 'cap', 'בוטל': 'undone', 'סיום קורס': 'course', 'סגרת "צריך לחזור"': 'review',
+      'הערה': 'note', 'תת-משימה': 'sub', 'רק 5 דקות': 'start', 'יעד יומי': 'goalDay', 'יעד שבועי': 'goalWeek', 'אתגר יומי': 'chal', 'הישג חדש': 'badge',
+      'זמן לימוד': 'study', 'אזכרות בוקר': 'adkM', 'אזכרות ערב': 'adkE', 'מתחת למינימום היומי': 'belowMin', 'מינימום יומי': 'dailyMin', 'מימוש פרס': 'redeem' })
+      .forEach(([he, k]) => KNOWN.set(he, 'game.w.' + k));
+    Object.entries(G.DIFF_LABELS).forEach(([n, he]) => KNOWN.set(he, 'game.w.diff' + n));
+    return KNOWN;
+  };
+  /** A stored ledger label or reason, translated when it is built-in text. */
+  V.gameText = (s) => {
+    s = String(s == null ? '' : s);
+    const k = known().get(s);
+    if (k) return LX(k);
+    let m = /^רצף ×([\d.]+)$/.exec(s); // stored streak reason
+    if (m) return LX('game.w.streak', { x: m[1] });
+    m = /^(?:(\d+) ש׳)?\s*(?:(\d+) דק׳)?$/.exec(s); // stored study-minutes reason (u.fmtMinutes)
+    if (m && (m[1] || m[2])) return CT.ui.minutes((Number(m[1]) || 0) * 60 + (Number(m[2]) || 0));
+    return s;
+  };
+  V.challengeName = (ch) => (ch ? LX('game.ch.' + ch.id) : '');
+  V.badgeName = (b) => LX('game.ach.' + b.id + '.name');
+  const unlockName = (x) => LX('xpp.unk.' + x.kind, { name: LX('game.un.' + x.id) });
 
   /* ---------- look: accent color, level frame, title, sound (in-site rewards) ---------- */
   V.applyLook = () => {
@@ -34,6 +67,7 @@
       el = document.createElement('div');
       el.id = 'xp-pop';
       el.setAttribute('role', 'status');
+      CT.i18n.localized(el);
       document.body.appendChild(el);
     }
     el.className = 'xp-pop' + (kind ? ` xp-pop-${kind}` : '');
@@ -72,13 +106,14 @@
     const wrap = document.createElement('div');
     wrap.className = 'lvl-up';
     wrap.setAttribute('role', 'alertdialog');
-    wrap.setAttribute('aria-label', `${kicker} ${heading}`);
+    wrap.setAttribute('aria-label', `${kicker} ${CT.i18n.iso(heading)}`);
+    CT.i18n.localized(wrap);
     wrap.innerHTML = `
       <div class="lvl-card">
         ${motionOk() ? '<div class="lvl-burst" aria-hidden="true">' + Array.from({ length: 14 }, (_, i) => `<i style="--a:${i * (360 / 14)}deg;--d:${i % 3}"></i>`).join('') + '</div>' : ''}
         <div class="lvl-badge" aria-hidden="true">${big}</div>
         <p class="lvl-kicker">${esc(kicker)}</p>
-        <h2>${esc(heading)}</h2>
+        <h2 dir="auto">${esc(heading)}</h2>
         <p class="muted">${esc(text)}</p>
         <button class="btn btn-primary btn-lg" data-close>${esc(button)}</button>
       </div>`;
@@ -98,23 +133,23 @@
     const badges = r.added.filter((e) => e.t === 'badge');
     const goal = r.added.find((e) => e.t === 'goal' && e.p > 0);
     const chal = r.added.find((e) => e.t === 'chal' && e.p > 0);
-    if (badges.length) pop(`${badges[0].icon || '🏅'} הישג חדש: ${badges[0].label}`, `${signed(g)} XP${badges.length > 1 ? ` · ועוד ${badges.length - 1}` : ''}`, 'badge');
-    else if (goal) pop(`🎯 ${goal.label} הושג!`, `${signed(g)} XP`, 'goal');
-    else if (chal) pop('⚡ האתגר היומי הושלם!', `${signed(g)} XP`, 'goal');
+    if (badges.length) pop(`${badges[0].icon ? badges[0].icon + ' ' : ''}${LX('xpp.pop.badge', { name: V.gameText(badges[0].label) })}`, `${signed(g)} XP${badges.length > 1 ? ` · ${LX('xpp.pop.more', { n: badges.length - 1 })}` : ''}`, 'badge');
+    else if (goal) pop(LX('xpp.pop.goal', { name: V.gameText(goal.label) }), `${signed(g)} XP`, 'goal');
+    else if (chal) pop(LX('xpp.pop.chal'), `${signed(g)} XP`, 'goal');
     else if (g > 0) {
       const top = gained.slice().sort((a, b) => b.p - a.p)[0];
-      pop(`${signed(g)} XP`, (top.why || []).join(' · '));
+      pop(`${signed(g)} XP`, (top.why || []).map(V.gameText).join(' · '));
     } else if (l > 0) {
-      pop(`${signed(-l)} XP`, 'הנקודות על זה הוחזרו — אפשר לצבור שוב כשמסיימים');
+      pop(`${signed(-l)} XP`, LX('xpp.pop.back'));
     }
     if (g > 0) chime(false);
     if (r.added.some((e) => e.t === 'pen') && CT.app) CT.app.rerender(); // shows the gentle notice on the home screen
     if (r.level.n > r.levelBefore) {
-      const unlocked = G.UNLOCKS.filter((x) => x.level > r.levelBefore && x.level <= r.level.n).map((x) => x.name);
+      const unlocked = G.UNLOCKS.filter((x) => x.level > r.levelBefore && x.level <= r.level.n).map(unlockName);
       setTimeout(() => celebrate({
-        big: r.level.n, kicker: 'עלית רמה!', heading: r.level.name,
-        text: `רמה ${r.level.n}. ${unlocked.length ? `נפתח: ${unlocked.join(', ')}. ` : ''}עוד ${fmt(r.level.need)} נקודות לרמה הבאה. כל הכבוד על ההתמדה.`,
-        button: 'יאללה, ממשיכים',
+        big: r.level.n, kicker: LX('xpp.up.kicker'), heading: V.levelLabel(r.level.name),
+        text: [LX('xpp.up.level', { n: r.level.n }), unlocked.length ? LX('xpp.up.unlocked', { list: unlocked.join(', ') }) : '', LX('xpp.up.next', { n: fmt(r.level.need) })].filter(Boolean).join(' '),
+        button: LX('xpp.up.btn'),
       }), g > 0 ? 600 : 0);
     }
     paintChip();
@@ -132,9 +167,9 @@
     };
     const pi = s.items / goal.items, pm = s.minutes / goal.minutes;
     return `<svg class="goal-rings${G.goalMet(s, goal) ? ' met' : ''}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img"
-        aria-label="${label ? esc(label) : `${s.items} מתוך ${goal.items} פריטים, ${s.minutes} מתוך ${goal.minutes} דקות`}">${ring(size / 2 - 5, pi, 'gr-items')}${ring(size / 2 - 14, pm, 'gr-min')}</svg>`;
+        aria-label="${esc(label || LX('xpp.ringsLabel', { i: s.items, ni: goal.items, m: Math.round(s.minutes), nm: goal.minutes }))}">${ring(size / 2 - 5, pi, 'gr-items')}${ring(size / 2 - 14, pm, 'gr-min')}</svg>`;
   }
-  const goalLine = (s, goal) => `<span class="gl-i">${Math.min(s.items, 99)}/${goal.items} פריטים</span> · <span class="gl-m">${fmt(s.minutes)}/${goal.minutes} דק׳</span>`;
+  const goalLine = (s, goal) => `<span class="gl-i">${L('xpp.lineItems', { n: fmt(Math.min(s.items, 99)), m: fmt(goal.items) })}</span> · <span class="gl-m">${L('xpp.lineMin', { n: fmt(s.minutes), m: fmt(goal.minutes) })}</span>`;
 
   /* ---------- sidebar chip (the home screen uses V.dailyHTML below) ---------- */
   /** A level name in the interface language. Names are stored (chosen titles) in Hebrew; a built-in one is shown
@@ -177,32 +212,33 @@
         ${goalRings(ds, goal, 52, line)}
         <span class="td-goal-t"><b>${met ? I.t('xpd.goalMet') : I.t('xpd.goal')}</b><span class="muted small">${esc(line)}</span>${meta}</span>
       </a>
-      <p class="td-chal${chDone ? ' is-done' : ''}">${chDone ? u.icon.check : u.icon.spark}<span class="muted small">${I.t('xpd.challenge')}</span><span class="small" dir="auto">${esc(ch.name)}</span></p>`;
+      <p class="td-chal${chDone ? ' is-done' : ''}">${chDone ? u.icon.check : u.icon.spark}<span class="muted small">${I.t('xpd.challenge')}</span><span class="small">${esc(V.challengeName(ch))}</span></p>`;
   };
   if (CT.views.dashboard) CT.views.dashboard.slots.daily.push(V.dailyHTML);
 
   /* ---------- page: overview ---------- */
-  const TYPE_LABEL = { item: 'סיום פריט', review: 'צריך לחזור', study: 'זמן לימוד', note: 'הערה', course: 'סיום קורס', start: 'התחלה', sub: 'תת-משימה', goal: 'יעד', chal: 'אתגר', badge: 'הישג', redeem: 'פרס', pen: 'ניכוי', rev: 'ביטול' };
+  const TYPES = ['item', 'review', 'study', 'note', 'course', 'start', 'sub', 'goal', 'chal', 'badge', 'redeem', 'pen', 'rev', 'adk'];
+  const typeLabel = (t) => (TYPES.includes(t) ? LX('xpp.type.' + t) : t);
 
   function rulesHTML(cfg) {
-    const p = cfg.pts;
+    const p = cfg.pts, n = (x) => fmt(x);
     const rows = [
-      ['סיום פריט קל / רגיל / קשה', `${p.easy} / ${p.normal} / ${p.hard}`, 'ש״ב, מעבדות ופרויקטים נחשבים קשים אוטומטית. אפשר לשנות לכל פריט ב"פרטים ועריכה".'],
-      ['בונוס בזמן', `+${p.onTime}`, 'סיום עד תאריך היעד.'],
-      ['בונוס מוקדם', `+${p.early}`, `סיום ${p.earlyDays} ימים או יותר לפני תאריך היעד.`],
-      ['זמן לימוד', `${p.per10min} לכל 10 דק׳`, `עד ${cfg.caps.study} ביום.`],
-      ['הערה ראשונה על פריט', `+${p.note}`, `מ-${p.noteMinChars} תווים. עד ${cfg.caps.note} ביום. לא נלקח בחזרה.`],
-      ['סגירת "צריך לחזור"', `+${p.review}`, ''],
-      ['סיום קורס', `+${p.course}`, 'עם ציון, עובר או פטור.'],
-      ['"רק 5 דקות"', `+${p.start}`, `על עצם ההתחלה. פעם ביום לכל פריט, עד ${cfg.caps.start} ביום.`],
-      ['תת-משימה', `+${p.sub}`, `לכל צעד שמסמנים. עד ${cfg.caps.sub} ביום.`],
-      ['יעד יומי / שבועי', `+${p.goalDay} / +${p.goalWeek}`, `${cfg.goals.day.items} פריטים או ${cfg.goals.day.minutes} דק׳ ביום; ${cfg.goals.week.items} פריטים או ${cfg.goals.week.minutes} דק׳ בשבוע (מיום ראשון).`],
-      ['אתגר יומי', `+${p.challenge}`, 'אתגר קטן אחד ביום, מתחלף כל יום.'],
-      ['הישג חדש', `+${p.badge}`, 'הישגים נשארים לתמיד.'],
-      ['מכפיל רצף', cfg.streak.map(([d, x]) => `<span class="nw">${d}+ ימים ×${x}</span>`).join(' '), 'על סיום פריטים. רצף = ימים רצופים עם נקודות.'],
+      ['xpp.r.items', `${n(p.easy)} / ${n(p.normal)} / ${n(p.hard)}`, L('xpp.r.itemsHint')],
+      ['xpp.r.onTime', `+${n(p.onTime)}`, L('xpp.r.onTimeHint')],
+      ['xpp.r.early', `+${n(p.early)}`, L('xpp.r.earlyHint', { n: p.earlyDays })],
+      ['xpp.r.study', esc(LX('xpp.r.per10', { n: p.per10min })), L('xpp.r.capDay', { n: cfg.caps.study })],
+      ['xpp.r.note', `+${n(p.note)}`, L('xpp.r.noteHint', { chars: p.noteMinChars, n: cfg.caps.note })],
+      ['xpp.r.review', `+${n(p.review)}`, ''],
+      ['xpp.r.course', `+${n(p.course)}`, L('xpp.r.courseHint')],
+      ['xpp.r.start', `+${n(p.start)}`, L('xpp.r.startHint', { n: cfg.caps.start })],
+      ['xpp.r.sub', `+${n(p.sub)}`, L('xpp.r.subHint', { n: cfg.caps.sub })],
+      ['xpp.r.goals', `+${n(p.goalDay)} / +${n(p.goalWeek)}`, L('xpp.r.goalsHint', { di: cfg.goals.day.items, dm: cfg.goals.day.minutes, wi: cfg.goals.week.items, wm: cfg.goals.week.minutes })],
+      ['xpp.r.chal', `+${n(p.challenge)}`, L('xpp.r.chalHint')],
+      ['xpp.r.badge', `+${n(p.badge)}`, L('xpp.r.badgeHint')],
+      ['xpp.r.streak', cfg.streak.map(([d, x]) => `<span class="nw">${esc(LX('xpp.r.streakStep', { d, x }))}</span>`).join(' '), L('xpp.r.streakHint')],
     ];
-    return `<table class="xp-rules"><tbody>${rows.map(([a, b, c]) => `<tr><th scope="row">${a}</th><td class="num">${b}</td><td class="muted small">${c}</td></tr>`).join('')}</tbody></table>
-      <p class="muted small">ביטול סימון מחזיר בדיוק את מה שניתן, וסימון מחדש מחזיר אותו — אף פעם לא כפול. תקרה יומית לסיום פריטים: ${cfg.caps.item}. היום מתחלף ב-04:00, כך שעבודה בלילה נספרת ליום שלה. יעד של יום שעבר כבר לא משתנה. מה שהיה מסומן לפני שהופעלו הנקודות לא נספר.</p>`;
+    return `<table class="xp-rules"><tbody>${rows.map(([a, b, c]) => `<tr><th scope="row">${L(a)}</th><td class="num">${b}</td><td class="muted small">${c}</td></tr>`).join('')}</tbody></table>
+      <p class="muted small">${L('xpp.r.footer', { n: cfg.caps.item })}</p>`;
   }
 
   function overviewHTML(st, cfg, s) {
@@ -214,31 +250,32 @@
     const sem = S.semester(st.settings.activeSemesterId);
     const seasons = (st.semesters || []).map((x) => ({ x, xp: G.seasonXP(st, x.id) })).filter((r) => r.xp > 0 || (sem && r.x.id === sem.id));
     const week = u.sum(gm.ledger.filter((e) => e.d > u.addDays(day, -7) && G.EARN_TYPES.has(e.t)), (e) => e.p);
+    const goalRow = (stats, goal, key, perfect) => `<div class="goal-row">${goalRings(stats, goal)}<div><b>${L(key)}${G.goalMet(stats, goal) ? ` · ${L('xpp.met')}` : ''}</b><p class="muted small">${goalLine(stats, goal)}${perfect && G.goalPerfect(stats, goal) ? ` · ${L('xpp.perfectDay')}` : ''}</p></div></div>`;
     return `
       <div class="stat-cards">
-        <div class="card stat"><b>${fmt(s.earned)}</b><span>סה״כ נקודות</span></div>
-        <div class="card stat"><b>${signed(s.today)}</b><span>היום</span></div>
-        <div class="card stat"><b>${signed(week)}</b><span>7 ימים אחרונים</span></div>
-        <div class="card stat"><b>${s.streak.days}</b><span>${s.streak.days === 1 ? 'יום רצף' : 'ימי רצף'}${s.streak.days && !s.streak.today ? ' — אפשר להמשיך היום' : ''}</span></div>
+        <div class="card stat"><b>${fmt(s.earned)}</b><span>${L('xpp.total')}</span></div>
+        <div class="card stat"><b dir="ltr">${signed(s.today)}</b><span>${L('rel.today')}</span></div>
+        <div class="card stat"><b dir="ltr">${signed(week)}</b><span>${L('xpp.last7')}</span></div>
+        <div class="card stat"><b>${fmt(s.streak.days)}</b><span>${L('xpp.streakDays', { n: s.streak.days })}${s.streak.days && !s.streak.today ? ` — ${L('xpp.keepToday')}` : ''}</span></div>
       </div>
       ${extras ? `<div class="xp-two">
         <section class="card goals-card" aria-labelledby="goals-h">
-          <div class="card-head"><h2 id="goals-h">יעדים</h2><span class="muted small">פריטים או דקות — מה שמגיע קודם</span></div>
-          <div class="goal-row">${goalRings(ds, cfg.goals.day)}<div><b>היום${G.goalMet(ds, cfg.goals.day) ? ' · הושג 🎯' : ''}</b><p class="muted small">${goalLine(ds, cfg.goals.day)}${G.goalPerfect(ds, cfg.goals.day) ? ' · יום מושלם ☀️' : ''}</p></div></div>
-          <div class="goal-row">${goalRings(ws, cfg.goals.week)}<div><b>השבוע${G.goalMet(ws, cfg.goals.week) ? ' · הושג 🎯' : ''}</b><p class="muted small">${goalLine(ws, cfg.goals.week)}</p></div></div>
-          <p class="muted small gr-legend"><span class="gl-i">●</span> פריטים · <span class="gl-m">●</span> דקות</p>
+          <div class="card-head"><h2 id="goals-h">${L('xpp.goals')}</h2><span class="muted small">${L('xpp.goalsHint')}</span></div>
+          ${goalRow(ds, cfg.goals.day, 'rel.today', true)}
+          ${goalRow(ws, cfg.goals.week, 'xpp.thisWeek', false)}
+          <p class="muted small gr-legend"><span class="gl-i" aria-hidden="true">●</span> ${L('xpp.items')} · <span class="gl-m" aria-hidden="true">●</span> ${L('xpp.minutes')}</p>
         </section>
         <section class="card chal-card${chDone ? ' done' : ''}" aria-labelledby="chal-h">
-          <div class="card-head"><h2 id="chal-h">אתגר היום</h2><span class="muted small num-ltr">+${cfg.pts.challenge}</span></div>
-          <p class="chal-name">${chDone ? '✓ ' : '⚡ '}${esc(ch.name)}</p>
-          <p class="muted small">${chDone ? 'הושלם. מחר יש אתגר חדש.' : 'אתגר קטן אחד, מתחלף כל יום. לא חובה — רק כיף.'}</p>
-          <h3>עונה${sem ? `: ${esc(sem.name)}` : ''}</h3>
-          <p class="muted small">כל סמסטר הוא עונה: הניקוד שלה מתחיל מאפס, והרמה וההישגים נשארים.</p>
-          ${seasons.length ? `<ul class="season-list">${seasons.map((r) => `<li${sem && r.x.id === sem.id ? ' class="cur"' : ''}><span>${esc(r.x.name)}</span><b>${fmt(r.xp)}</b></li>`).join('')}</ul>` : ''}
+          <div class="card-head"><h2 id="chal-h">${L('xpp.chalToday')}</h2><span class="muted small num-ltr">+${fmt(cfg.pts.challenge)}</span></div>
+          <p class="chal-name">${chDone ? u.icon.check : u.icon.spark} ${esc(V.challengeName(ch))}</p>
+          <p class="muted small">${L(chDone ? 'xpp.chalDone' : 'xpp.chalHint')}</p>
+          <h3>${L('xpp.season')}${sem ? `: <span dir="auto">${esc(sem.name)}</span>` : ''}</h3>
+          <p class="muted small">${L('xpp.seasonHint')}</p>
+          ${seasons.length ? `<ul class="season-list">${seasons.map((r) => `<li${sem && r.x.id === sem.id ? ' class="cur"' : ''}><span dir="auto">${esc(r.x.name)}</span><b>${fmt(r.xp)}</b></li>`).join('')}</ul>` : ''}
         </section>
       </div>` : ''}
       <details class="card dash-more"${gm.ledger.length ? '' : ' open'}>
-        <summary><span class="dm-title">איך צוברים נקודות</span><span class="muted small dm-hint">כל הערכים והכללים</span><span class="dm-chev" aria-hidden="true">${u.icon.chev}</span></summary>
+        <summary><span class="dm-title">${L('xpp.how')}</span><span class="muted small dm-hint">${L('xpp.howHint')}</span><span class="dm-chev" aria-hidden="true">${u.icon.chev}</span></summary>
         <div class="dm-body">${rulesHTML(cfg)}</div>
       </details>`;
   }
@@ -246,15 +283,16 @@
   /* ---------- page: badges ---------- */
   function badgesHTML(st) {
     const got = G.badgesEarned(st);
-    return `<p class="muted">${got.size} מתוך ${G.BADGES.length} הישגים. הישג שהושג נשאר לתמיד. שלושה מהם סודיים.</p>
+    const secret = G.BADGES.filter((b) => b.secret).length;
+    return `<p class="muted">${L('xpp.badgesCount', { n: got.size, m: G.BADGES.length, s: secret })}</p>
       <ul class="badges">${G.BADGES.map((b) => {
         const e = got.get(b.id);
         const hidden = b.secret && !e;
         return `<li class="badge${e ? ' got' : ''}${hidden ? ' secret' : ''}">
-          <span class="b-ic" aria-hidden="true">${hidden ? '🔒' : b.icon}</span>
-          <b>${hidden ? 'הישג סודי' : esc(b.name)}</b>
-          <span class="muted small">${hidden ? 'יתגלה כשיושג' : esc(b.desc)}</span>
-          ${e ? `<span class="b-date small">${u.fmtDateFull(e.d)}</span>` : ''}
+          <span class="b-ic" aria-hidden="true">${hidden ? u.icon.info : b.icon}</span>
+          <b>${hidden ? L('xpp.secret') : esc(V.badgeName(b))}</b>
+          <span class="muted small">${hidden ? L('xpp.secretHint') : esc(LX('game.ach.' + b.id + '.desc'))}</span>
+          ${e ? `<span class="b-date small">${esc(CT.ui.date(e.d, 'full'))}</span>` : ''}
         </li>`;
       }).join('')}</ul>`;
   }
@@ -267,94 +305,96 @@
     const lk = look();
     const redeemed = gm.ledger.filter((e) => e.t === 'redeem').slice().reverse();
     const unlock = (kind) => G.UNLOCKS.filter((x) => x.kind === kind);
-    const pick = (kind, label, opts) => `<div class="pick"><h3>${label}</h3><div class="pick-row" role="group" aria-label="${label}">
-        <button class="pick-btn${!lk[kind] ? ' on' : ''}" data-look="${kind}" data-v="" aria-pressed="${!lk[kind]}">רגיל</button>
+    const pick = (kind, labelKey, opts) => `<div class="pick"><h3>${L(labelKey)}</h3><div class="pick-row" role="group" aria-label="${L(labelKey)}">
+        <button class="pick-btn${!lk[kind] ? ' on' : ''}" data-look="${kind}" data-v="" aria-pressed="${!lk[kind]}">${L('xpp.plain')}</button>
         ${opts.map((x) => {
           const open = x.level <= lvl;
           return `<button class="pick-btn${lk[kind] === x.value ? ' on' : ''}${open ? '' : ' locked'}" data-look="${kind}" data-v="${esc(x.value)}" ${open ? '' : 'disabled'} aria-pressed="${lk[kind] === x.value}"
-            >${kind === 'accent' ? `<span class="sw sw-${esc(x.value)}" aria-hidden="true"></span>` : ''}${kind === 'frame' ? `<span class="xp-lvl mini frame-${esc(x.value)}" aria-hidden="true">${lvl}</span>` : ''}${esc(x.name.split(': ')[1] || x.name)}${open ? '' : ` <span class="small">· רמה ${x.level}</span>`}</button>`;
+            >${kind === 'accent' ? `<span class="sw sw-${esc(x.value)}" aria-hidden="true"></span>` : ''}${kind === 'frame' ? `<span class="xp-lvl mini frame-${esc(x.value)}" aria-hidden="true">${lvl}</span>` : ''}${esc(LX('game.un.' + x.id))}${open ? '' : ` <span class="small">· ${L('xpd.level', { n: x.level })}</span>`}</button>`;
         }).join('')}</div></div>`;
     return `
       <section class="card prize-card" aria-labelledby="pp-h">
-        <div class="card-head"><h2 id="pp-h">פרסים אישיים</h2><span class="balance">יתרה: <b>${fmt(bal)}</b> נקודות</span></div>
-        <p class="muted small">קבעו לעצמכם פרסים אמיתיים (פיצה, ערב סרט, משחק…) ומחיר בנקודות. "ממש" מוריד מהיתרה — לא מהרמה — ונרשם ביומן. מימוש לא מתבטל.</p>
+        <div class="card-head"><h2 id="pp-h">${L('xpp.myPrizes')}</h2><span class="balance">${L('xpp.balance', { n: fmt(bal) })}</span></div>
+        <p class="muted small">${L('xpp.prizesHint')}</p>
         ${gm.prizes.length ? `<ul class="prizes">${gm.prizes.map((p) => `<li>
             <span class="pz-name" dir="auto">${esc(p.name)}</span>
             <span class="pz-cost">${fmt(p.cost)}</span>
-            ${bar(Math.round(Math.min(1, bal / p.cost) * 100), `התקדמות ל${p.name}`)}
-            <button class="btn btn-small ${bal >= p.cost ? 'btn-primary' : ''}" data-redeem="${esc(p.id)}" ${bal >= p.cost ? '' : 'disabled'}>${bal >= p.cost ? 'ממש' : `עוד ${fmt(p.cost - bal)}`}</button>
-            <button class="icon-btn" data-pdel="${esc(p.id)}" aria-label="מחק פרס: ${esc(p.name)}">${u.icon.trash}</button></li>`).join('')}</ul>` : '<p class="muted">עוד אין פרסים. הוסיפו אחד למטה.</p>'}
+            ${bar(Math.round(Math.min(1, bal / p.cost) * 100), LX('xpp.progressTo', { name: CT.i18n.iso(p.name) }))}
+            <button class="btn btn-small ${bal >= p.cost ? 'btn-primary' : ''}" data-redeem="${esc(p.id)}" ${bal >= p.cost ? '' : 'disabled'}>${bal >= p.cost ? L('xpp.redeem') : L('xpp.more', { n: fmt(p.cost - bal) })}</button>
+            <button class="icon-btn" data-pdel="${esc(p.id)}" aria-label="${L('xpp.delPrize', { name: CT.i18n.iso(p.name) })}">${u.icon.trash}</button></li>`).join('')}</ul>` : `<p class="muted">${L('xpp.noPrizes')}</p>`}
         <form class="prize-add" data-padd>
-          <input name="name" dir="auto" maxlength="60" placeholder="פרס (למשל: ערב סרט)" aria-label="שם הפרס" required>
-          <input name="cost" type="number" min="10" max="100000" step="10" placeholder="נקודות" aria-label="מחיר בנקודות" required>
-          <button class="btn">${u.icon.plus}<span>הוסף</span></button>
+          <input name="name" dir="auto" maxlength="60" placeholder="${L('xpp.prizePh')}" aria-label="${L('xpp.prizeName')}" required>
+          <input name="cost" type="number" min="10" max="100000" step="10" placeholder="${L('xpp.points')}" aria-label="${L('xpp.prizeCost')}" required>
+          <button class="btn">${u.icon.plus}<span>${L('tmr.add')}</span></button>
         </form>
-        ${redeemed.length ? `<h3>מומשו</h3><ul class="redeemed">${redeemed.map((e) => `<li><span dir="auto">${esc(e.label)}</span><span class="muted small">${u.fmtDateFull(e.d)}</span><b>${signed(e.p)}</b></li>`).join('')}</ul>` : ''}
+        ${redeemed.length ? `<h3>${L('xpp.redeemed')}</h3><ul class="redeemed">${redeemed.map((e) => `<li><span dir="auto">${esc(e.label)}</span><span class="muted small">${esc(CT.ui.date(e.d, 'full'))}</span><b dir="ltr">${signed(e.p)}</b></li>`).join('')}</ul>` : ''}
       </section>
       <section class="card" aria-labelledby="site-h">
-        <div class="card-head"><h2 id="site-h">פרסים באתר</h2><span class="muted small">נפתחים לפי רמה, בלי להוריד נקודות</span></div>
-        ${pick('accent', 'צבע ראשי', unlock('accent'))}
-        ${pick('frame', 'מסגרת לרמה', unlock('frame'))}
-        <div class="pick"><h3>תואר</h3><label class="field inline"><span class="muted small">מוצג במקום שם הרמה</span>
-          <select data-title><option value="">שם הרמה הנוכחית</option>${G.titles(st).map((t) => `<option ${lk.title === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label></div>
-        ${pick('sound', 'צליל משוב', unlock('sound'))}
-        <p class="muted small">הצלילים נשמעים רק אם "צלילי משוב" מופעל ב<a href="#/settings/appearance">הגדרות</a>.</p>
+        <div class="card-head"><h2 id="site-h">${L('xpp.sitePrizes')}</h2><span class="muted small">${L('xpp.sitePrizesHint')}</span></div>
+        ${pick('accent', 'xpp.accent', unlock('accent'))}
+        ${pick('frame', 'xpp.frame', unlock('frame'))}
+        <div class="pick"><h3>${L('xpp.title')}</h3><label class="field inline"><span class="muted small">${L('xpp.titleHint')}</span>
+          <select data-title><option value="">${L('xpp.titleNone')}</option>${G.titles(st).map((t) => `<option value="${esc(t)}" ${lk.title === t ? 'selected' : ''}>${esc(V.levelLabel(t))}</option>`).join('')}</select></label></div>
+        ${pick('sound', 'xpp.sound', unlock('sound'))}
+        <p class="muted small">${L('xpp.soundHint')} <a href="#/settings/appearance">${L('adkp.settings')}</a></p>
       </section>`;
   }
 
   /* ---------- page: log ---------- */
+  const CAP = 'תקרה יומית'; // stored reason (game.js) for a capped entry worth 0
   function historyHTML(ledger) {
-    const list = ledger.slice().reverse().filter((e) => e.p !== 0 || (e.why || []).includes('תקרה יומית'));
-    if (!list.length) return CT.ui.empty('עוד אין נקודות. סמנו V על פריט, הפעילו טיימר או כתבו הערה — והן יופיעו כאן.');
+    const list = ledger.slice().reverse().filter((e) => e.p !== 0 || (e.why || []).includes(CAP));
+    if (!list.length) return CT.ui.empty(L('xpp.logEmpty'));
     const shown = list.slice(0, histShown);
     let day = '';
     const rows = shown.map((e) => {
-      const head = e.d !== day ? `<li class="xp-day">${esc(dayTitle(e.d))}<span>${signed(u.sum(list.filter((x) => x.d === e.d), (x) => x.p))}</span></li>` : '';
+      const head = e.d !== day ? `<li class="xp-day">${esc(dayTitle(e.d))}<span dir="ltr">${signed(u.sum(list.filter((x) => x.d === e.d), (x) => x.p))}</span></li>` : '';
       day = e.d;
       return `${head}<li class="xp-row${e.p < 0 ? ' neg' : ''}">
-          <span class="xp-type">${TYPE_LABEL[e.t] || e.t}</span>
-          <span class="xp-label" dir="auto">${esc(e.label || '')}</span>
-          <span class="xp-why">${(e.why || []).map((w) => `<span class="tag">${esc(w)}</span>`).join('')}</span>
-          <b class="xp-p">${signed(e.p)}</b></li>`;
+          <span class="xp-type">${esc(typeLabel(e.t))}</span>
+          <span class="xp-label" dir="auto">${esc(V.gameText(e.label || ''))}</span>
+          <span class="xp-why">${(e.why || []).map((w) => `<span class="tag" dir="auto">${esc(V.gameText(w))}</span>`).join('')}</span>
+          <b class="xp-p" dir="ltr">${signed(e.p)}</b></li>`;
     }).join('');
-    return `<ul class="xp-hist">${rows}</ul>${list.length > histShown ? '<button class="btn btn-ghost btn-small more-btn" data-action="more">הצג עוד</button>' : ''}`;
+    return `<ul class="xp-hist">${rows}</ul>${list.length > histShown ? `<button class="btn btn-ghost btn-small more-btn" data-action="more">${L('xpp.showMore')}</button>` : ''}`;
   }
   function dayTitle(d) {
     const t = G.dayKey();
-    if (d === t) return 'היום';
-    if (d === u.addDays(t, -1)) return 'אתמול';
-    return `${u.DAYS[u.parseDate(d).getDay()]} ${u.fmtDateFull(d)}`;
+    if (d === t) return LX('rel.today');
+    if (d === u.addDays(t, -1)) return LX('rel.yesterday');
+    return CT.ui.date(d, 'long');
   }
 
   /* ---------- page ---------- */
-  const TABS = [['', 'סקירה'], ['badges', 'הישגים'], ['prizes', 'פרסים'], ['log', 'יומן']];
+  const TABS = [['', 'xpp.tab.overview'], ['badges', 'xpp.tab.badges'], ['prizes', 'xpp.tab.prizes'], ['log', 'xpp.tab.log']];
 
   V.render = (root, params = {}) => {
     const st = S.state;
     if (!st.game) G.ensure(st);
     const cfg = G.cfg(st);
     const s = G.summary(st);
-    const L = s.level;
+    const Lv = s.level;
     const tab = TABS.some(([k]) => k === params.tab) ? params.tab : '';
     const body = tab === 'badges' ? badgesHTML(st) : tab === 'prizes' ? prizesHTML(st)
-      : tab === 'log' ? `<section class="card"><div class="card-head"><h2>יומן נקודות</h2><span class="muted small">${st.game.ledger.length} רשומות</span></div>${historyHTML(st.game.ledger)}</section>`
+      : tab === 'log' ? `<section class="card"><div class="card-head"><h2>${L('xpp.log')}</h2><span class="muted small">${L('xpp.entries', { n: st.game.ledger.length })}</span></div>${historyHTML(st.game.ledger)}</section>`
         : overviewHTML(st, cfg, s);
+    const ttl = V.levelLabel(title(Lv)), base = V.levelLabel(Lv.name);
     V.applyLook();
     root.innerHTML = `
       <div class="xp-page">
-        <h1>נקודות ורמות</h1>
-        <p class="muted xp-intro">נקודות על התקדמות אמיתית: סיום פריטים, זמן לימוד, הערות ויעדים. כל נקודה נרשמת ביומן, עם הסיבה.</p>
-        ${cfg.enabled === false ? '<div class="banner banner-info">הנקודות כבויות. אפשר להפעיל אותן ב<a href="#/settings/xp">הגדרות</a>.</div>' : ''}
+        <header class="pg-head"><h1>${L('xpp.h1')}</h1>
+        <p class="muted xp-intro">${L('xpp.intro')}</p></header>
+        ${cfg.enabled === false ? `<div class="banner banner-info">${L('xpp.off')} <a href="#/settings/xp">${L('adkp.toSettings')}</a></div>` : ''}
         <section class="card xp-hero">
-          <span class="xp-lvl xp-lvl-lg${frameCls()}" aria-hidden="true">${L.n}</span>
+          <span class="xp-lvl xp-lvl-lg${frameCls()}" aria-hidden="true">${Lv.n}</span>
           <div class="xp-hero-main">
-            <p class="muted small">רמה ${L.n}${title(L) !== L.name ? ` · ${esc(L.name)}` : ''}</p>
-            <h2>${esc(title(L))}</h2>
-            ${bar(L.pct, 'התקדמות לרמה הבאה')}
-            <p class="muted small">${fmt(L.into)} / ${fmt(L.need)} — עוד ${fmt(L.need - L.into)} לרמה ${L.n + 1} (${esc(G.levelName(L.n + 1))})</p>
+            <p class="muted small">${L('xpd.level', { n: Lv.n })}${ttl !== base ? ` · ${esc(base)}` : ''}</p>
+            <h2 dir="auto">${esc(ttl)}</h2>
+            ${bar(Lv.pct, LX('xpp.toNext'))}
+            <p class="muted small">${L('xpp.heroLine', { into: fmt(Lv.into), need: fmt(Lv.need), left: fmt(Lv.need - Lv.into), n: Lv.n + 1, name: V.levelLabel(G.levelName(Lv.n + 1)) })}</p>
           </div>
         </section>
-        <nav class="tabs xp-tabs" aria-label="חלקי הדף">${TABS.map(([k, l]) => `<a class="tab${k === tab ? ' active' : ''}" href="#/xp${k ? `?tab=${k}` : ''}"${k === tab ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+        <nav class="tabs xp-tabs" aria-label="${L('xpp.sections')}">${TABS.map(([k, l]) => `<a class="tab${k === tab ? ' active' : ''}" href="#/xp${k ? `?tab=${k}` : ''}"${k === tab ? ' aria-current="page"' : ''}>${L(l)}</a>`).join('')}</nav>
         ${body}
       </div>`;
     bind(root, params);
@@ -366,26 +406,30 @@
     if (more) more.onclick = () => { histShown += HIST_PAGE; rerender(); };
     root.querySelectorAll('[data-look]').forEach((b) => {
       b.onclick = () => {
-        S.commit('בחירת פרס באתר', (st) => { G.ensure(st).look[b.dataset.look] = b.dataset.v || undefined; });
+        const kind = b.dataset.look, v = b.dataset.v;
+        S.commit(LX('xpp.u.look'), (st) => { G.ensure(st).look[kind] = v || undefined; });
         V.applyLook(); paintChip(); rerender();
-        if (b.dataset.look === 'sound' && b.dataset.v) chime(false);
+        if (kind === 'sound' && v) chime(false);
+        const back = root.querySelector(`[data-look="${kind}"][data-v="${CSS.escape(v)}"]`);
+        if (back) back.focus();
       };
     });
     const ttl = root.querySelector('[data-title]');
-    if (ttl) ttl.onchange = () => { S.commit('בחירת תואר', (st) => { G.ensure(st).look.title = ttl.value || undefined; }); paintChip(); rerender(); };
+    if (ttl) ttl.onchange = () => { S.commit(LX('xpp.u.title'), (st) => { G.ensure(st).look.title = ttl.value || undefined; }); paintChip(); rerender(); const x = root.querySelector('[data-title]'); if (x) x.focus(); };
     const add = root.querySelector('[data-padd]');
     if (add) add.onsubmit = (e) => {
       e.preventDefault();
       const name = add.name.value.trim(), cost = Math.round(Number(add.cost.value));
       if (!name || !(cost >= 10)) return;
-      S.commit('הוספת פרס', (st) => { G.ensure(st).prizes.push({ id: u.uid(), name, cost }); });
+      S.commit(LX('xpp.u.addPrize'), (st) => { G.ensure(st).prizes.push({ id: u.uid(), name, cost }); });
       rerender();
+      const x = root.querySelector('[data-padd] [name=name]'); if (x) x.focus();
     };
     root.querySelectorAll('[data-pdel]').forEach((b) => {
       b.onclick = async () => {
         const p = S.state.game.prizes.find((x) => x.id === b.dataset.pdel);
-        if (!p || !(await CT.ui.confirm(`למחוק את הפרס "${p.name}" מהרשימה? (מימושים קודמים נשארים ביומן)`, 'מחק', true))) return;
-        S.commit('מחיקת פרס', (st) => { st.game.prizes = st.game.prizes.filter((x) => x.id !== p.id); });
+        if (!p || !(await CT.ui.confirm(LX('xpp.delPrizeQ', { name: CT.i18n.iso(p.name) }), LX('cp.deleteOk'), true, { localized: true }))) return;
+        S.commit(LX('xpp.u.delPrize'), (st) => { st.game.prizes = st.game.prizes.filter((x) => x.id !== p.id); });
         rerender();
       };
     });
@@ -393,12 +437,12 @@
       b.onclick = async () => {
         const p = S.state.game.prizes.find((x) => x.id === b.dataset.redeem);
         if (!p) return;
-        if (!(await CT.ui.confirm(`לממש את "${p.name}" ב-${fmt(p.cost)} נקודות?\nהיתרה תרד, הרמה לא. מימוש לא מתבטל.`, 'ממש'))) return;
+        if (!(await CT.ui.confirm(LX('xpp.redeemQ', { name: CT.i18n.iso(p.name), n: fmt(p.cost) }), LX('xpp.redeem'), false, { localized: true }))) return;
         let ok = null;
         // no undo snapshot: a redemption is final
-        S.commit('מימוש פרס', (st) => { ok = G.redeem(st, p.id); }, { undo: false });
-        if (ok) celebrate({ big: '🎁', kicker: 'מגיע לך!', heading: p.name, text: `מימשת ב-${fmt(p.cost)} נקודות. שיהיה כיף — הרווחת את זה.`, button: 'תודה!' });
-        else CT.ui.toast('אין מספיק נקודות ביתרה');
+        S.commit(LX('xpp.u.redeem'), (st) => { ok = G.redeem(st, p.id); }, { undo: false });
+        if (ok) celebrate({ big: u.icon.award, kicker: LX('xpp.cel.kicker'), heading: p.name, text: LX('xpp.cel.text', { n: fmt(p.cost) }), button: LX('xpp.cel.btn') });
+        else CT.ui.toast(LX('xpp.noBalance'));
         rerender();
       };
     });
@@ -561,7 +605,7 @@
     if (!it) return;
     n.count++; n.last = Date.now();
     try { localStorage.setItem(NUDGE_KEY, JSON.stringify(n)); } catch (e) { /* ignore */ }
-    CT.ui.toast(`⏰ אולי ${it.title}? חמש דקות, ואז מחליטים.`, { ms: 12000, action: CT.focus ? { label: 'רק 5 דקות', fn: () => CT.focus.start(it.id, 5) } : null });
+    CT.ui.toast(LX('xpp.nudge', { name: CT.i18n.iso(it.title) }), { ms: 12000, action: CT.focus ? { label: LX('xpp.just5'), fn: () => CT.focus.start(it.id, 5) } : null });
   }
   setTimeout(() => { nudgeTick(); setInterval(nudgeTick, 60000); }, 20000);
 

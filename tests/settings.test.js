@@ -71,7 +71,7 @@ test('sign-in errors: a code for each known case; anything else is the generic t
 });
 
 test('th(): the dictionary text is escaped, markup parameters stay markup, numbers keep plural rules', () => {
-  const out = inLang('en', () => I.th('set.cat.track', { name: '<bdi>Electrical &amp; Computer</bdi>', id: '<span dir="ltr">ee</span>' }));
+  const out = inLang('en', () => I.th('set.cat.track', { name: I.html('<bdi>Electrical &amp; Computer</bdi>'), id: I.ltr('ee') }));
   assert.equal(out, 'Track: <bdi>Electrical &amp; Computer</bdi> (<span dir="ltr">ee</span>)');
   assert.equal(inLang('en', () => I.th('set.cat.issues', { n: 1 })), '1 unverified entry in this catalog');
   assert.equal(inLang('en', () => I.th('set.cat.issues', { n: 3 })), '3 unverified entries in this catalog');

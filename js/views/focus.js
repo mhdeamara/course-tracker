@@ -5,6 +5,7 @@
   'use strict';
   const { u, ui, store: S } = CT;
   const esc = u.esc, icon = u.icon;
+  const L = (k, p) => CT.i18n.t(k, p), LX = (k, p) => CT.i18n.tx(k, p);
   const KEY = 'ct.focus';
   const F = {};
 
@@ -24,11 +25,11 @@
     const subs = item.subs || [];
     const done = subs.filter((x) => x.done).length;
     return `<div class="subs" data-item="${esc(item.id)}">
-        ${subs.length ? `<p class="subs-count muted small">${done}/${subs.length} תתי-משימות</p>` : '<p class="muted small subs-count">פרקו את זה לצעדים קטנים — כל צעד שמסמנים שווה נקודות.</p>'}
+        ${subs.length ? `<p class="subs-count muted small">${L('fx.subsCount', { done, n: subs.length })}</p>` : `<p class="muted small subs-count">${L('fx.subsHint')}</p>`}
         <ul class="subs-list">${subs.map((x) => `<li class="sub${x.done ? ' done' : ''}">
             <label><input type="checkbox" data-sub="${esc(x.id)}" ${x.done ? 'checked' : ''}><span dir="auto">${esc(x.t)}</span></label>
-            <button class="icon-btn" data-subdel="${esc(x.id)}" aria-label="מחק תת-משימה: ${esc(x.t)}">${icon.trash}</button></li>`).join('')}</ul>
-        <form class="sub-add" data-subadd><input name="t" dir="auto" maxlength="140" placeholder="צעד קטן הבא… (Enter)" aria-label="תת-משימה חדשה" autocomplete="off"><button class="btn btn-small">${icon.plus}<span>הוסף</span></button></form>
+            <button class="icon-btn" data-subdel="${esc(x.id)}" aria-label="${L('fx.subDel', { name: CT.i18n.iso(x.t) })}">${icon.trash}</button></li>`).join('')}</ul>
+        <form class="sub-add" data-subadd><input name="t" dir="auto" maxlength="140" placeholder="${L('fx.subPh')}" aria-label="${L('fx.subNew')}" autocomplete="off"><button class="btn btn-small">${icon.plus}<span>${L('tmr.add')}</span></button></form>
       </div>`;
   };
 
@@ -38,7 +39,7 @@
       const cb = e.target.closest('[data-sub]');
       if (!cb) return;
       const id = cb.closest('.subs').dataset.item;
-      S.commit(cb.checked ? 'סימון תת-משימה' : 'ביטול תת-משימה', () => {
+      S.commit(LX(cb.checked ? 'fx.u.check' : 'fx.u.uncheck'), () => {
         const x = S.findItem(id);
         const sb = x && (x.item.subs || []).find((s) => s.id === cb.dataset.sub);
         if (sb) sb.done = cb.checked;
@@ -50,7 +51,7 @@
       const del = e.target.closest('[data-subdel]');
       if (!del) return;
       const id = del.closest('.subs').dataset.item;
-      S.commit('מחיקת תת-משימה', () => {
+      S.commit(LX('fx.u.del'), () => {
         const x = S.findItem(id);
         if (x) x.item.subs = (x.item.subs || []).filter((s) => s.id !== del.dataset.subdel);
       });
@@ -63,7 +64,7 @@
       const t = form.t.value.trim();
       if (!t) return;
       const id = form.closest('.subs').dataset.item;
-      S.commit('הוספת תת-משימה', () => {
+      S.commit(LX('fx.u.add'), () => {
         const x = S.findItem(id);
         if (x) (x.item.subs = x.item.subs || []).push({ id: u.uid(), t, done: false });
       });
@@ -77,7 +78,7 @@
   F.openSubs = (itemId) => {
     const x = S.findItem(itemId);
     if (!x) return;
-    const m = ui.modal({ title: `תתי-משימות · ${x.item.title}`, body: '<div class="subs-box"></div>', actions: [{ label: 'סגור', primary: true }] });
+    const m = ui.modal({ title: LX('fx.subsTitle', { name: CT.i18n.iso(x.item.title) }), localized: true, body: '<div class="subs-box"></div>', actions: [{ label: LX('common.close'), primary: true }] });
     const box = m.body.querySelector('.subs-box');
     const draw = () => { const y = S.findItem(itemId); if (y) box.innerHTML = F.subsHTML(y.item); };
     draw();
@@ -92,7 +93,7 @@
     const x = S.findItem(itemId);
     if (!x) return;
     if (f && f.itemId !== itemId) finish(false); // one session at a time: save the previous one first
-    S.commit('התחלת סשן מיקוד', (st) => {
+    S.commit(LX('fx.u.start'), (st) => {
       const y = S.findItem(itemId);
       if (y.item.status === 'todo') y.item.status = 'doing';
       if (CT.game) {
@@ -120,7 +121,7 @@
       S.toggleDone(x.item.id);
     }
     close();
-    if (x && min >= 1) ui.toast(`נרשמו ${u.fmtMinutes(min)} ל${x.course.name}`);
+    if (x && min >= 1) ui.toast(LX('tmr.logged', { min: ui.minutes(min), name: CT.i18n.iso(x.course.name) }));
   }
 
   function close() {
@@ -158,22 +159,22 @@
     const it = x.item;
     el.innerHTML = `
       <div class="fx-box" style="--c:${esc(x.course.color)}">
-        <button class="icon-btn fx-close" data-fx="exit" aria-label="יציאה ממצב מיקוד (Esc)">${icon.close}</button>
-        <p class="fx-course"><span class="dot"></span><span dir="auto">${esc(x.course.name)}</span> · ${esc(x.cat.name)}</p>
+        <button class="icon-btn fx-close" data-fx="exit" aria-label="${L('fx.exitLabel')}">${icon.close}</button>
+        <p class="fx-course"><span class="dot"></span><span dir="auto">${esc(x.course.name)}</span> · <span dir="auto">${esc(x.cat.name)}</span></p>
         <h2 class="fx-title" id="fx-title" dir="auto">${esc(it.title)}</h2>
         <div class="fx-clock">
           <div class="fx-ring-wrap">${ring(pct)}</div>
           <div class="fx-time" dir="ltr" aria-live="off">${mmss(left())}</div>
         </div>
-        ${f.asked ? `<p class="fx-msg" role="status">${f.target <= 5 ? 'עברו 5 דקות — התחלת, וזה החלק הקשה. להמשיך עוד קצת?' : 'הזמן נגמר. כל הכבוד על הריכוז!'}</p>` : `<p class="fx-msg muted">${f.running ? (f.target <= 5 ? 'רק 5 דקות. אחר כך מחליטים.' : 'זמן ריכוז. הטלפון יכול לחכות.') : 'מושהה'}</p>`}
+        ${f.asked ? `<p class="fx-msg" role="status">${L(f.target <= 5 ? 'fx.after5' : 'fx.timeUp')}</p>` : `<p class="fx-msg muted">${L(f.running ? (f.target <= 5 ? 'fx.just5' : 'fx.focusing') : 'tmr.ph.paused')}</p>`}
         <div class="fx-btns">
           ${f.asked
-            ? `<button class="btn btn-primary btn-lg" data-fx="more" data-min="10">עוד 10 דקות</button><button class="btn btn-lg" data-fx="more" data-min="25">עוד 25</button>`
-            : f.running ? `<button class="btn btn-lg" data-fx="pause">${icon.pause}<span>השהה</span></button>` : `<button class="btn btn-primary btn-lg" data-fx="resume">${icon.play}<span>המשך</span></button>`}
-          <button class="btn btn-lg ${f.asked ? '' : 'btn-primary'}" data-fx="done">${icon.check}<span>סיימתי את זה</span></button>
-          <button class="btn btn-ghost btn-lg" data-fx="exit">${f.asked ? 'מספיק לעכשיו' : 'יציאה'}</button>
+            ? `<button class="btn btn-primary btn-lg" data-fx="more" data-min="10">${L('fx.more10')}</button><button class="btn btn-lg" data-fx="more" data-min="25">${L('fx.more25')}</button>`
+            : f.running ? `<button class="btn btn-lg" data-fx="pause">${icon.pause}<span>${L('tmr.pauseBtn')}</span></button>` : `<button class="btn btn-primary btn-lg" data-fx="resume">${icon.play}<span>${L('tmr.resume')}</span></button>`}
+          <button class="btn btn-lg ${f.asked ? '' : 'btn-primary'}" data-fx="done">${icon.check}<span>${L('fx.done')}</span></button>
+          <button class="btn btn-ghost btn-lg" data-fx="exit">${L(f.asked ? 'fx.enough' : 'fx.exit')}</button>
         </div>
-        <details class="fx-subs"${(it.subs || []).length ? ' open' : ''}><summary>תתי-משימות${(it.subs || []).length ? ` · ${(it.subs || []).filter((s) => s.done).length}/${it.subs.length}` : ''}</summary>
+        <details class="fx-subs"${(it.subs || []).length ? ' open' : ''}><summary>${L('fx.subs')}${(it.subs || []).length ? ` · ${(it.subs || []).filter((s) => s.done).length}/${it.subs.length}` : ''}</summary>
           <div class="fx-subs-body">${F.subsHTML(it)}</div></details>
       </div>`;
   }
@@ -212,6 +213,7 @@
       el.setAttribute('role', 'dialog');
       el.setAttribute('aria-modal', 'true');
       el.setAttribute('aria-labelledby', 'fx-title');
+      CT.i18n.localized(el); // interface text follows the language; titles carry dir=auto
       document.body.appendChild(el);
       el.addEventListener('click', onClick);
       F.bindSubs(el, () => draw(true));

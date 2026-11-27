@@ -70,9 +70,10 @@
       const b = line.match(/^\s*(?:[-•*]|\d+[.)])\s+(.*)$/);
       if (b) { if (!list) { list = []; out.push(list); } list.push(b[1]); return; }
       list = null;
-      if (line.trim()) out.push(line.replace(/^#+\s*/, ''));
+      if (/^\s*#+\s+\S/.test(line)) out.push({ h: line.replace(/^\s*#+\s*/, '') }); // a heading line: a short bold lead-in
+      else if (line.trim()) out.push(line);
     });
-    return out.map((x) => (Array.isArray(x) ? `<ul>${x.map((li) => `<li>${inline(li)}</li>`).join('')}</ul>` : `<p>${inline(x)}</p>`)).join('');
+    return out.map((x) => (Array.isArray(x) ? `<ul>${x.map((li) => `<li>${inline(li)}</li>`).join('')}</ul>` : x.h != null ? `<p class="chat-h">${inline(x.h)}</p>` : `<p>${inline(x)}</p>`)).join('');
   }
 
   /** "Read: assignments and dates · 1 Dec – 7 Dec" — what a tool call read (translated; the arguments are data). */

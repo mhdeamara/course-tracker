@@ -62,7 +62,7 @@
     s.state.meta.updatedAt = new Date().toISOString();
     try { localStorage.setItem(KEY, JSON.stringify(s.state)); } catch (e) {
       console.error(e);
-      if (CT.ui) CT.ui.toast('השמירה בדפדפן נכשלה — כדאי לייצא גיבוי עכשיו', { error: true });
+      if (CT.ui) CT.ui.toast(CT.i18n ? CT.i18n.tx('store.saveFailed') : 'השמירה בדפדפן נכשלה — כדאי לייצא גיבוי עכשיו', { error: true });
     }
     if (!noAuto && CT.backup) CT.backup.scheduleAutoSave();
     if (!noAuto && CT.cloud) CT.cloud.onLocalChange();
@@ -108,7 +108,7 @@
   s.undo = () => {
     if (CT.guard && CT.guard.locked()) { CT.guard.nudge(); return; }
     const e = s.undoStack.pop();
-    if (!e) { CT.ui.toast('אין פעולה לביטול'); return; }
+    if (!e) { CT.ui.toast(CT.i18n ? CT.i18n.tx('store.nothingToUndo') : 'אין פעולה לביטול'); return; }
     const cur = s.state;
     s.state = JSON.parse(e.snap);
     if (CT.game && CT.game.carry) CT.game.carry(cur, s.state); // redemptions are final: undo never refunds them
@@ -155,7 +155,7 @@
   };
 
   /* ---------- common mutations ---------- */
-  s.setStatus = (itemId, status) => s.commit('שינוי סטטוס', () => {
+  s.setStatus = (itemId, status) => s.commit(CT.i18n ? CT.i18n.tx('store.u.status') : 'שינוי סטטוס', () => {
     const f = s.findItem(itemId);
     if (!f) return;
     if (status === 'done' && f.item.status === 'review') f.item.fromReview = true; // closing a "צריך לחזור" earns a bonus
