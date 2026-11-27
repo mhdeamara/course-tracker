@@ -48,7 +48,7 @@ Preserve light and dark themes, existing CSS variables and components. Mobile fi
 - Translate interface text only. Never translate or change stored values, ids, category ids, statuses, course names, Moodle content or user data; logic never compares against translated text.
 - Layout must work in RTL and LTR: CSS logical properties (`inline-start/end`, `margin-inline`…), no `left/right` or `translateX` for direction-bound placement; mirror only direction-bound icons.
 - User content and mixed text get `dir="auto"` (or `<bdi>`). Pages not translated yet stay Hebrew/RTL in English mode (`data-ct-content`); a translated block inside them uses `CT.i18n.attrs()`, a translated dialog or menu passes `localized: true`.
-- Changing the language is a UI preference (`ct.lang`): no store commit, no cloud push; it re-renders only the app shell and never `#main`, open dialogs or unsaved input. The lang/dir bootstrap in `<head>` is `js/i18n.js` itself — keep a single selection rule.
+- Changing the language is a UI preference (`ct.lang`): no store commit, no cloud push. It re-renders the app shell, and `#main` only on fully translated routes (`TRANSLATED` in `js/app.js`), keeping route, scroll, focus and typed text (`data-keep` fields); other pages and open dialogs are left alone. A route is added to `TRANSLATED` only when all of its UI is translated. The lang/dir bootstrap in `<head>` is `js/i18n.js` itself — keep a single selection rule.
 - Dates, numbers and plurals are formatted for display with `CT.i18n.locale()`; stored formats never change. Hebrew and English keyboard shortcuts both keep working.
 
 ## Verification

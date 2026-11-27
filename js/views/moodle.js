@@ -36,15 +36,17 @@
   V.badges = (it) => {
     const s = it.source;
     if (!s || s.kind !== 'moodle') return '';
-    const time = s.dueTime ? ` · ${s.dueTime}` : '';
+    const t = CT.i18n.t;
+    const time = s.dueTime ? ` · ${esc(s.dueTime)}` : '';
     const out = [];
-    if (freshUids().has(s.uid)) out.push('<span class="pill mm-new" title="נוסף בסנכרון האחרון ממודל">חדש</span>');
-    out.push(`<span class="tag moodle-tag" title="מטלה ממודל${s.dueTime ? ` · להגשה עד ${s.dueTime === '24:00' ? '24:00 (חצות)' : s.dueTime}` : ''}${s.category ? ` · ${esc(s.category)}` : ''}">ממודל${time}</span>`);
-    if (s.changed) out.push(`<button class="tag moodle-alert" data-action="moodle-changed" title="המועד או השם השתנו במודל — לחץ לפרטים">עודכן ממודל</button>`);
-    if (s.gone) out.push(`<button class="tag moodle-alert" data-action="moodle-gone" title="האירוע כבר לא מופיע בלוח של מודל — לחץ להחלטה">לא מופיע יותר במודל</button>`);
+    if (freshUids().has(s.uid)) out.push(`<span class="pill mm-new" title="${t('mb.newTitle')}">${t('mb.new')}</span>`);
+    const tip = [t('mb.fromTitle'), s.dueTime && t(s.dueTime === '24:00' ? 'mb.dueMidnight' : 'mb.dueBy', { time: s.dueTime }), s.category && esc(s.category)].filter(Boolean).join(' · ');
+    out.push(`<span class="tag moodle-tag" title="${tip}">${t('mb.from')}${time}</span>`);
+    if (s.changed) out.push(`<button class="tag moodle-alert" data-action="moodle-changed" title="${t('mb.changedTitle')}">${t('mb.changed')}</button>`);
+    if (s.gone) out.push(`<button class="tag moodle-alert" data-action="moodle-gone" title="${t('mb.goneTitle')}">${t('mb.gone')}</button>`);
     if (s.mergeWith) {
       const f = S.findItem(s.mergeWith);
-      if (f) out.push(`<button class="tag moodle-merge" data-action="moodle-merge" title="נראה כמו אותה מטלה">למזג עם „${esc(f.item.title)}”?</button>`);
+      if (f) out.push(`<button class="tag moodle-merge" data-action="moodle-merge" title="${t('mb.mergeTitle')}">${t('mb.merge', { title: f.item.title })}</button>`);
     }
     return out.join('');
   };

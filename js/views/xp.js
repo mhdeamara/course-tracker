@@ -125,45 +125,18 @@
     return `<div class="xp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"${label ? ` aria-label="${esc(label)}"` : ''}><div class="xp-fill" style="width:${Math.min(100, pct)}%"></div></div>`;
   }
   /** Two concentric rings: outer = items, inner = minutes, each toward its goal. */
-  function goalRings(s, goal, size = 64) {
+  function goalRings(s, goal, size = 64, label) {
     const ring = (r, pct, cls) => {
       const c = 2 * Math.PI * r;
       return `<circle class="gr-bg" cx="${size / 2}" cy="${size / 2}" r="${r}"/><circle class="gr-fg ${cls}" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - Math.min(1, pct))).toFixed(2)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>`;
     };
     const pi = s.items / goal.items, pm = s.minutes / goal.minutes;
     return `<svg class="goal-rings${G.goalMet(s, goal) ? ' met' : ''}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img"
-        aria-label="${s.items} מתוך ${goal.items} פריטים, ${s.minutes} מתוך ${goal.minutes} דקות">${ring(size / 2 - 5, pi, 'gr-items')}${ring(size / 2 - 14, pm, 'gr-min')}</svg>`;
+        aria-label="${label ? esc(label) : `${s.items} מתוך ${goal.items} פריטים, ${s.minutes} מתוך ${goal.minutes} דקות`}">${ring(size / 2 - 5, pi, 'gr-items')}${ring(size / 2 - 14, pm, 'gr-min')}</svg>`;
   }
   const goalLine = (s, goal) => `<span class="gl-i">${Math.min(s.items, 99)}/${goal.items} פריטים</span> · <span class="gl-m">${fmt(s.minutes)}/${goal.minutes} דק׳</span>`;
 
-  /* ---------- home screen card + sidebar chip ---------- */
-  V.cardHTML = () => {
-    if (!on()) return '';
-    V.applyLook();
-    const st = S.state, cfg = G.cfg(st), day = G.dayKey();
-    const s = G.summary(st);
-    const L = s.level;
-    const mult = G.multiplier(cfg, s.streak.today ? s.streak.days : s.streak.days + 1);
-    const extras = cfg.extras !== false;
-    const ds = extras ? G.dayStats(st.game.ledger, day) : null;
-    const ch = extras ? G.challenge(day) : null;
-    const chDone = extras && st.game.ledger.some((e) => e.k === `chal:${day}` && e.t === 'chal') && ch.test(ds);
-    return `<a href="#/xp" class="card xp-card lift" aria-label="רמה ${L.n}, ${esc(L.name)}. ${fmt(L.into)} מתוך ${fmt(L.need)} נקודות לרמה הבאה. לפרטים">
-        <div class="xp-top">
-          <span class="xp-lvl${frameCls()}" aria-hidden="true">${L.n}</span>
-          <span class="xp-name"><span class="muted small">רמה ${L.n}</span><b>${esc(title(L))}</b></span>
-          <span class="xp-today"><b>${signed(s.today)}</b><span class="muted small">היום</span></span>
-        </div>
-        ${bar(L.pct)}
-        <div class="xp-foot muted small"><span>${fmt(L.into)} / ${fmt(L.need)} לרמה ${L.n + 1}</span>${mult > 1 ? `<span class="xp-mult">רצף ×${mult}</span>` : ''}</div>
-        ${extras ? `<div class="xp-goal">
-          ${goalRings(ds, cfg.goals.day, 44)}
-          <div class="xp-goal-t"><b>${G.goalMet(ds, cfg.goals.day) ? '🎯 יעד היום הושג' : 'יעד היום'}</b><span class="muted small">${goalLine(ds, cfg.goals.day)}</span></div>
-        </div>
-        <div class="xp-chal${chDone ? ' done' : ''}"><span aria-hidden="true">${chDone ? '✓' : '⚡'}</span><span><span class="muted small">אתגר היום:</span> ${esc(ch.name)}</span></div>` : ''}
-      </a>`;
-  };
-
+  /* ---------- sidebar chip (the home screen uses V.dailyHTML below) ---------- */
   V.chipHTML = () => {
     if (!on()) return '';
     V.applyLook();
@@ -175,7 +148,28 @@
     if (el) el.outerHTML = V.chipHTML();
   }
 
-  if (CT.views.dashboard) CT.views.dashboard.slots.side.push(V.cardHTML);
+  /** Compact, translated daily goal for the "היום" screen (inside its daily-progress card). */
+  V.dailyHTML = () => {
+    if (!on() || !S.state.game) return '';
+    V.applyLook();
+    const I = CT.i18n, ui = CT.ui;
+    const st = S.state, cfg = G.cfg(st), day = G.dayKey();
+    const s = G.summary(st), L = s.level;
+    const extras = cfg.extras !== false;
+    const meta = `<span class="muted small">${I.t('xpd.level', { n: L.n })} · ${I.t('xpd.today', { pts: (s.today > 0 ? '+' : '') + ui.num(Math.round(s.today)) })}</span>`;
+    if (!extras) return `<a href="#/xp" class="td-goal">${bar(L.pct, I.tx('xpd.levelBar', { n: L.n }))}<span class="td-goal-t">${meta}</span></a>`;
+    const ds = G.dayStats(st.game.ledger, day), goal = cfg.goals.day;
+    const met = G.goalMet(ds, goal);
+    const ch = G.challenge(day);
+    const chDone = st.game.ledger.some((e) => e.k === `chal:${day}` && e.t === 'chal') && ch.test(ds);
+    const line = I.tx('xpd.goalLine', { i: ui.num(Math.min(ds.items, 99)), ni: ui.num(goal.items), m: ui.num(Math.round(ds.minutes)), nm: ui.num(goal.minutes) });
+    return `<a href="#/xp" class="td-goal${met ? ' is-met' : ''}">
+        ${goalRings(ds, goal, 52, line)}
+        <span class="td-goal-t"><b>${met ? I.t('xpd.goalMet') : I.t('xpd.goal')}</b><span class="muted small">${esc(line)}</span>${meta}</span>
+      </a>
+      <p class="td-chal${chDone ? ' is-done' : ''}">${chDone ? u.icon.check : u.icon.spark}<span class="muted small">${I.t('xpd.challenge')}</span><span class="small" dir="auto">${esc(ch.name)}</span></p>`;
+  };
+  if (CT.views.dashboard) CT.views.dashboard.slots.daily.push(V.dailyHTML);
 
   /* ---------- page: overview ---------- */
   const TYPE_LABEL = { item: 'סיום פריט', review: 'צריך לחזור', study: 'זמן לימוד', note: 'הערה', course: 'סיום קורס', start: 'התחלה', sub: 'תת-משימה', goal: 'יעד', chal: 'אתגר', badge: 'הישג', redeem: 'פרס', pen: 'ניכוי', rev: 'ביטול' };

@@ -1,250 +1,227 @@
-/* views/dashboard.js — "היום": the home screen. What matters now first (the next action, today, what's urgent);
- * notices, exams, classes, the semester and the course cards are one click away. */
+/* views/dashboard.js — "היום": the home screen. The next action, one list of what is coming up (assignments and exams
+ * together, each once), today's classes and today's progress. Non-critical notices live in the notification center;
+ * only a sync conflict and a failed Moodle sync are shown here, because they need action. Fully translated (CT.i18n). */
 (function (CT) {
   'use strict';
   const { u, ui, stats } = CT;
-  const S = CT.store;
+  const S = CT.store, M = CT.model;
+  const I18N = CT.i18n, t = I18N.t, tx = I18N.tx;
   const esc = u.esc, icon = u.icon;
   const V = {};
   CT.views = CT.views || {};
   CT.views.dashboard = V;
 
-  const URGENT_SHOWN = 5;
-  let pick = 0;               // which suggestion "הפעולה הבאה" shows ("משהו אחר" moves to the next)
-  let urgentAll = false;      // "הצג הכל" in the urgent list
-  const OPEN_KEY = 'ct.dash.open';
-  const openSet = () => { try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY)) || ['courses']); } catch (e) { return new Set(['courses']); } };
-  const saveOpen = (set) => { try { localStorage.setItem(OPEN_KEY, JSON.stringify([...set])); } catch (e) { /* ignore */ } };
+  const AGENDA_SHOWN = 6;
+  let pick = 0;            // which suggestion "next action" shows ("another" moves on)
+  let agendaAll = false;   // "show all" in the upcoming list
 
-  /** Extra cards other modules put on the home screen (the points engine adds its own). Each returns HTML or ''. */
-  V.slots = { side: [], top: [] };
+  /** Cards other modules add to the daily-progress card (points goal, adhkar). Each returns HTML or ''. */
+  V.slots = { daily: [] };
 
   V.render = (root) => {
     const st = S.state;
     const courses = S.activeCourses();
-    const urgent = stats.urgent(courses, 7);
-    const exams = stats.upcomingExams(courses).slice(0, 6);
+    const agenda = stats.agenda(courses);
     const actions = stats.nextActions(courses);
-    const notices = bannersHTML();
-    const opened = openSet();
-    const nowNext = CT.views.schedule ? CT.views.schedule.nowNextHTML() : '';
-    const extraTop = V.slots.top.map((f) => f()).join('');
-    const extraSide = V.slots.side.map((f) => f()).join('');
-
     root.innerHTML = `
-      <div class="dash">
-        ${headHTML(courses, urgent)}
-        ${noticesHTML(notices)}
-        ${extraTop}
-        <div class="today-grid">
-          ${nextHTML(actions)}
-          <div class="today-side">${extraSide}${todayHTML(st, courses)}</div>
-        </div>
-        <section class="card urgent" aria-labelledby="urgent-h">
-          <div class="card-head"><h2 id="urgent-h">מה דחוף</h2><span class="muted small">7 הימים הקרובים${urgent.length ? ` · ${urgent.length}` : ''}</span></div>
-          ${urgent.length ? `<ul class="urgent-list">${(urgentAll ? urgent : urgent.slice(0, URGENT_SHOWN)).map(urgentRow).join('')}</ul>
-            ${urgent.length > URGENT_SHOWN ? `<button class="btn btn-ghost btn-small more-btn" data-action="urgent-all">${urgentAll ? 'הצג פחות' : `הצג את כל ה-${urgent.length}`}</button>` : ''}`
-            : `<p class="muted calm">${icon.check} אין מטלות עם תאריך יעד בשבוע הקרוב.</p>`}
-        </section>
-        ${(exams.length || nowNext) ? moreHTML('soon', '⏳ מבחנים ומערכת', exams.length ? `${exams.length} מבחנים קרובים · הקרוב בעוד ${u.daysUntil(exams[0].exam.date)} ימים` : 'שיעורים היום', opened, `
-          <div class="dash-two">
-            ${exams.length ? `<section aria-label="ספירה לאחור"><ul class="countdown">${exams.map(({ exam, course }) => {
-              const n = u.daysUntil(exam.date);
-              return `<li style="--c:${esc(course.color)}">
-                <span class="cd-num">${n === 0 ? 'היום' : `${n}<small>${n === 1 ? 'יום' : 'ימים'}</small>`}</span>
-                <span class="cd-text"><a href="#/course/${course.id}" dir="auto">${esc(course.name)}</a>
-                <span class="muted small">${esc(exam.label || 'מבחן')} · ${u.fmtDateFull(exam.date)}</span></span></li>`;
-            }).join('')}</ul></section>` : ''}
-            ${nowNext}
-          </div>`) : ''}
-        ${semesterHTML(courses, opened)}
-        ${moreHTML('courses', '📚 הקורסים שלי', `${S.semesterCourses().length} קורסים`, opened, `
-          <div class="course-grid">
-            ${S.semesterCourses().map(cardHTML).join('') || ui.empty('אין קורסים פעילים. <a class="btn btn-primary" href="#/catalog">בחר מתכנית הלימודים</a> <button class="btn" data-action="new-course">קורס ידני</button>')}
+      <div class="today">
+        ${headHTML(courses, agenda)}
+        ${alertsHTML()}
+        <div class="td-grid">
+          <div class="td-main">
+            ${nextHTML(actions)}
+            ${agendaHTML(agenda)}
           </div>
-          <div class="btn-row"><button class="btn" data-action="new-course">${icon.plus}<span>קורס חדש</span></button></div>`)}
+          <aside class="td-side" aria-label="${t('td.sideLabel')}">
+            ${classesHTML()}
+            ${dailyHTML(st, courses)}
+          </aside>
+        </div>
       </div>`;
-
-    const dash = root.querySelector('.dash');
-    dash.addEventListener('click', onClick);
-    dash.querySelectorAll('details[data-k]').forEach((d) => d.addEventListener('toggle', () => {
-      const set = openSet();
-      if (d.open) set.add(d.dataset.k); else set.delete(d.dataset.k);
-      saveOpen(set);
-    }));
+    root.querySelector('.today').addEventListener('click', onClick);
   };
 
+  /* ---------- head: date, greeting, one calm line, semester week + nearest exam ---------- */
   const greeting = () => {
     const h = new Date().getHours();
-    return h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : h < 21 ? 'ערב טוב' : 'לילה טוב';
+    return tx(h < 5 ? 'td.greet.night' : h < 12 ? 'td.greet.morning' : h < 17 ? 'td.greet.noon' : h < 21 ? 'td.greet.evening' : 'td.greet.night');
   };
 
-  /** Date, greeting, one calm line about the week. */
-  function headHTML(courses, urgent) {
-    const dateStr = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
-    const overdue = urgent.filter((x) => x.item.due < u.today()).length;
-    const soon = urgent.length - overdue;
-    const sub = !courses.length ? 'בוא נתחיל — הוסף את הקורס הראשון.'
-      : overdue ? `${overdue === 1 ? 'מטלה אחת מחכה' : `${overdue} מטלות מחכות`} מהימים הקודמים${soon ? `, ועוד ${soon} השבוע` : ''}. צעד אחד בכל פעם.`
-        : soon ? `${soon === 1 ? 'מטלה אחת' : `${soon} מטלות`} עם דדליין בשבוע הקרוב. הכול בשליטה.`
-          : 'אין דדליינים השבוע — זמן טוב להתקדם בהרצאות ובתרגולים.';
-    return `<header class="today-head">
-        <p class="today-date">${dateStr}</p>
-        <h1>${greeting()}</h1>
-        <p class="today-sub">${sub}</p>
+  function headHTML(courses, agenda) {
+    const items = agenda.filter((x) => x.kind === 'item');
+    const overdue = items.filter((x) => x.date < u.today()).length;
+    const soon = items.length - overdue;
+    const sub = !courses.length ? t('td.sub.empty')
+      : overdue ? (soon ? t('td.sub.overdueSoon', { n: overdue, m: soon }) : t('td.sub.overdue', { n: overdue }))
+        : soon ? t('td.sub.soon', { n: soon }) : t('td.sub.calm');
+    const chips = [];
+    const sem = S.semester(S.state.settings.activeSemesterId);
+    if (sem && sem.start && sem.end) {
+      const total = u.daysBetween(sem.start, sem.end), passed = u.daysBetween(sem.start, u.today());
+      const weeks = Math.ceil((total + 1) / 7);
+      if (passed < 0) chips.push(`<span class="td-chip">${icon.calendar}${t('td.semStarts', { n: -passed })}</span>`);
+      else if (u.daysUntil(sem.end) >= 0) chips.push(`<span class="td-chip">${icon.calendar}${t('td.week', { n: u.clamp(Math.floor(passed / 7) + 1, 1, weeks), m: weeks })}</span>`);
+    }
+    const ex = stats.upcomingExams(courses)[0];
+    if (ex) {
+      const n = u.daysUntil(ex.exam.date);
+      chips.push(`<a class="td-chip td-exam" href="#/course/${esc(ex.course.id)}" style="--c:${esc(ex.course.color)}">${icon.cap}<span>${n === 0 ? t('td.examToday') : t('td.examIn', { n })}</span><span class="td-chip-sub" dir="auto">${esc(ex.course.name)}</span></a>`);
+    }
+    return `<header class="td-head">
+        <div class="td-hello">
+          <p class="td-date">${esc(ui.date(u.today(), 'long'))}</p>
+          <h1>${esc(greeting())}</h1>
+          <p class="td-sub">${sub}</p>
+        </div>
+        ${chips.length ? `<div class="td-chips">${chips.join('')}</div>` : ''}
       </header>`;
   }
 
-  /** The one big suggestion. */
+  /* ---------- the only on-screen alerts: sync conflict, failed Moodle sync (both need action) ---------- */
+  function alertsHTML() {
+    const out = [];
+    const C = CT.cloud;
+    if (C && C.status === 'conflict') {
+      out.push(`<div class="td-alert" role="status">${icon.alert}<div class="td-alert-t"><b>${t('td.conflict')}</b></div>
+        <span class="td-alert-a"><button class="btn btn-small btn-primary" data-action="sync-now">${t('td.resolve')}</button></span></div>`);
+    }
+    const err = S.state.moodle && S.state.moodle.linkError;
+    if (err) {
+      out.push(`<div class="td-alert" role="alert">${icon.alert}<div class="td-alert-t"><b>${t('td.moodleFailed')}</b>${err.message ? `<span class="muted small" dir="auto">${esc(err.message)}</span>` : ''}</div>
+        <span class="td-alert-a"><button class="btn btn-small" data-action="moodle-retry">${icon.refresh}<span>${t('td.retry')}</span></button>
+        <a class="btn btn-small btn-ghost" href="#/settings">${t('td.settings')}</a></span></div>`);
+    }
+    return out.length ? `<div class="td-alerts">${out.join('')}</div>` : '';
+  }
+
+  /* ---------- next action ---------- */
   function nextHTML(actions) {
     if (!actions.length) {
-      return `<section class="card next-card next-empty" aria-labelledby="next-h">
-        <p class="next-kicker" id="next-h">הפעולה הבאה</p>
-        <h2 class="next-title">אין כרגע משהו פתוח 🎉</h2>
-        <p class="muted">כל הפריטים בקורסים הפעילים הושלמו. אפשר להוסיף קורס או לנוח.</p>
+      return `<section class="card td-next is-empty" aria-labelledby="next-h">
+        <p class="td-kicker" id="next-h">${t('td.next')}</p>
+        <h2 class="td-next-title">${t('td.nextNone')}</h2>
+        <p class="muted small">${t('td.nextNoneSub')}</p>
       </section>`;
     }
     const a = actions[pick % actions.length];
     const { item, course, cat } = a;
-    const due = item.due ? ` · ${u.relDays(item.due)}` : '';
-    return `<section class="card next-card" style="--c:${esc(course.color)}" aria-labelledby="next-h" data-id="${esc(item.id)}">
-        <p class="next-kicker" id="next-h">הפעולה הבאה</p>
-        <h2 class="next-title" dir="auto">${esc(item.title)}</h2>
-        <p class="next-meta">${ui.courseDot(course)} <a href="#/course/${course.id}?item=${item.id}">${esc(course.name)}</a> · ${esc(cat.name)}${esc(due)}</p>
-        <p class="next-why">${esc(a.reason)}</p>
-        <div class="next-actions">
-          <button class="btn btn-primary btn-lg" data-action="next-done" data-id="${esc(item.id)}">${icon.check}<span>סיימתי</span></button>
-          ${CT.focus ? `<button class="btn btn-lg" data-action="next-five" data-id="${esc(item.id)}">${icon.timer || ''}<span>רק 5 דקות</span></button>` : ''}
-          <a class="btn btn-ghost" href="#/course/${course.id}?item=${item.id}">פתח</a>
-          ${actions.length > 1 ? `<button class="btn btn-ghost" data-action="next-other" aria-label="הצע משהו אחר">משהו אחר <span class="muted small">${(pick % actions.length) + 1}/${actions.length}</span></button>` : ''}
+    const late = item.due && item.due < u.today();
+    const why = a.why ? tx(a.why.k, a.why.p) : a.reason;
+    return `<section class="card td-next" style="--c:${esc(course.color)}" aria-labelledby="next-h" data-id="${esc(item.id)}">
+        <div class="td-next-top">
+          <p class="td-kicker" id="next-h">${t('td.next')}</p>
+          <span class="td-why${late ? ' is-late' : ''}">${late ? icon.alert : ''}<span dir="auto">${esc(why)}</span></span>
+        </div>
+        <h2 class="td-next-title" dir="auto">${esc(item.title)}</h2>
+        <p class="td-next-meta">${ui.courseDot(course)}<a href="#/course/${esc(course.id)}?item=${esc(item.id)}" dir="auto">${esc(course.name)}</a><span aria-hidden="true">·</span><span dir="auto">${esc(cat.name)}</span>${item.due ? `<span aria-hidden="true">·</span><span>${esc(ui.rel(item.due))}</span>` : ''}</p>
+        <div class="td-next-actions">
+          <button class="btn btn-primary" data-action="next-done" data-id="${esc(item.id)}">${icon.check}<span>${t('td.done')}</span></button>
+          ${CT.focus ? `<button class="btn" data-action="next-five" data-id="${esc(item.id)}">${icon.timer}<span>${t('td.five')}</span></button>` : ''}
+          <a class="btn btn-ghost" href="#/course/${esc(course.id)}?item=${esc(item.id)}">${t('td.open')}</a>
+          ${actions.length > 1 ? `<button class="btn btn-ghost td-other" data-action="next-other" aria-label="${t('td.otherLabel', { i: (pick % actions.length) + 1, n: actions.length })}">${t('td.other')} <span class="muted small" aria-hidden="true">${ui.num((pick % actions.length) + 1)}/${ui.num(actions.length)}</span></button>` : ''}
         </div>
       </section>`;
   }
 
-  /** Today at a glance (until the points engine adds its goal ring). */
-  function todayHTML(st, courses) {
-    const doneToday = stats.completedSince(courses, u.today()).length;
-    const minToday = u.sum(st.studyLog.filter((e) => e.date === u.today()), (e) => e.minutes);
-    const streak = stats.streak(st);
-    return `<section class="card today-card" aria-label="היום">
-        <div class="today-stat"><b>${doneToday}</b><span>הושלמו היום</span></div>
-        <div class="today-stat"><b>${minToday ? u.fmtMinutes(minToday) : '0'}</b><span>לימוד היום</span></div>
-        <div class="today-stat"><b>${streak.days}</b><span>${streak.days === 1 ? 'יום רצף' : 'ימי רצף'}</span></div>
+  /* ---------- upcoming: assignments and exams in one list ---------- */
+  function agendaHTML(list) {
+    const shown = agendaAll ? list : list.slice(0, AGENDA_SHOWN);
+    const row = (x) => {
+      const n = u.daysUntil(x.date);
+      const when = x.kind === 'exam'
+        ? (n === 0 ? tx('rel.today') : tx('td.inDays', { n }))
+        : ui.rel(x.date);
+      const late = x.kind === 'item' && n < 0;
+      const lead = x.kind === 'exam'
+        ? `<span class="ag-ic" aria-hidden="true">${icon.cap}</span>`
+        : `<button class="check check-sm" role="checkbox" aria-checked="false" data-action="toggle" data-id="${esc(x.item.id)}" aria-label="${t('td.markDone', { title: x.item.title })}">${icon.check}</button>`;
+      const title = x.kind === 'exam' ? (x.exam.label || tx('td.exam')) : x.item.title;
+      const href = x.kind === 'exam' ? `#/course/${esc(x.course.id)}` : `#/course/${esc(x.course.id)}?item=${esc(x.item.id)}`;
+      return `<li class="ag-row${x.kind === 'exam' ? ' is-exam' : ''}${late ? ' is-late' : n <= 1 ? ' is-soon' : ''}" style="--c:${esc(x.course.color)}">
+        ${lead}
+        <a class="ag-t" href="${href}"><span class="ag-title" dir="auto">${esc(title)}</span>
+          <span class="ag-sub">${ui.courseDot(x.course)}<span dir="auto">${esc(x.course.name)}</span>${x.kind === 'exam' ? `<span aria-hidden="true">·</span><span>${t('td.exam')}</span>` : ''}</span></a>
+        <span class="ag-when">${late ? icon.alert : ''}<span>${esc(when)}</span><span class="ag-date">${esc(ui.date(x.date, 'wd'))}</span></span>
+      </li>`;
+    };
+    return `<section class="card td-agenda" aria-labelledby="ag-h">
+        <div class="card-head"><h2 id="ag-h">${t('td.upcoming')}</h2>${list.length ? `<span class="td-count" aria-label="${t('td.upcomingCount', { n: list.length })}">${ui.num(list.length)}</span>` : ''}</div>
+        ${list.length ? `<ul class="ag-list">${shown.map(row).join('')}</ul>
+          ${list.length > AGENDA_SHOWN ? `<button class="btn btn-ghost btn-small td-more" data-action="agenda-all" aria-expanded="${agendaAll}">${agendaAll ? t('td.less') : t('td.all', { n: list.length })}</button>` : ''}`
+          : `<p class="td-calm">${icon.check}<span>${t('td.nothingSoon')}</span></p>`}
       </section>`;
   }
 
-  /** A collapsible section; open state is remembered on this device. */
-  function moreHTML(key, title, hint, opened, body) {
-    return `<details class="card dash-more" data-k="${key}"${opened.has(key) ? ' open' : ''}>
-        <summary><span class="dm-title">${title}</span><span class="muted small dm-hint">${esc(hint)}</span><span class="dm-chev" aria-hidden="true">${icon.chev}</span></summary>
-        <div class="dm-body">${body}</div>
-      </details>`;
-  }
-
-  function semesterHTML(courses, opened) {
-    const st = S.state;
-    const sem = S.semester(st.settings.activeSemesterId);
-    if (!sem || !sem.start || !sem.end) return '';
-    const total = u.daysBetween(sem.start, sem.end);
-    const passed = u.daysBetween(sem.start, u.today());
-    const weeks = Math.ceil((total + 1) / 7);
-    const week = u.clamp(Math.floor(passed / 7) + 1, 1, weeks);
-    const pct = u.clamp(Math.round((passed / total) * 100), 0, 100);
-    const left = u.daysUntil(sem.end);
-    const toExams = sem.examStart ? u.daysUntil(sem.examStart) : null;
-    const line = passed < 0 ? `הסמסטר מתחיל בעוד ${-passed} ימים`
-      : left < 0 ? (toExams != null && toExams >= 0 ? `הלימודים הסתיימו · תקופת המבחנים בעוד ${toExams} ימים` : 'הלימודים הסתיימו — בהצלחה במבחנים! 🍀')
-        : `עוד ${left} ימי לימודים${toExams != null ? ` · מבחנים בעוד ${toExams} ימים` : ''}`;
-    const all = courses.flatMap((c) => c.categories.flatMap((cat) => cat.items));
-    const tot = stats.progress(all);
-    const weekDone = stats.completedSince(courses, u.weekStart()).length;
-    const weekMin = u.sum(st.studyLog.filter((e) => e.date >= u.weekStart()), (e) => e.minutes);
-    return moreHTML('sem', '📅 הסמסטר', passed < 0 ? 'טרם התחיל' : `שבוע ${week} מתוך ${weeks}`, opened, `
-      <div class="sem-box" style="--c:var(--accent)">
-        <div class="hero-sem-top"><span>${esc(sem.name)}</span><b>${passed < 0 ? 'טרם התחיל' : `שבוע ${week} מתוך ${weeks}`}</b></div>
-        ${ui.bar(pct, 'התקדמות הסמסטר')}
-        <span class="muted small">${line}</span>
-      </div>
-      <div class="hero-tiles">
-        <div class="tile"><span class="tile-ic" aria-hidden="true">🎯</span><b>${tot.pct}%</b><span>התקדמות כוללת</span></div>
-        <div class="tile"><span class="tile-ic" aria-hidden="true">✅</span><b>${weekDone}</b><span>הושלמו השבוע</span></div>
-        <div class="tile"><span class="tile-ic" aria-hidden="true">⏱️</span><b>${weekMin ? u.fmtMinutes(weekMin) : '0'}</b><span>לימוד השבוע</span></div>
-        <div class="tile"><span class="tile-ic" aria-hidden="true">📊</span><b>${tot.open}</b><span>פריטים פתוחים</span></div>
-      </div>`);
-  }
-
-  /** On-screen notices: only the critical ones (a sync conflict). Everything else is in the notification center. */
-  function noticesHTML(list) {
-    return list.length ? `<div class="notices">${list.join('')}</div>` : '';
-  }
-
-  function bannersHTML() {
-    const C = CT.cloud;
-    const out = [];
-    if (C && C.status === 'conflict') {
-      out.push(`<div class="banner banner-warn" role="status">⚠️ הנתונים השתנו בשני מכשירים ועדיין לא נבחרה גרסה.
-        <button class="btn btn-small btn-primary" data-action="sync-now">פתור עכשיו</button></div>`);
+  /* ---------- today's classes (or the next one) ---------- */
+  function classesHTML() {
+    const slots = S.activeCourses().flatMap((c) => (c.schedule || []).map((slot) => ({ slot, course: c })));
+    if (!slots.length) return '';
+    const d = new Date(), day = d.getDay(), min = d.getHours() * 60 + d.getMinutes();
+    const today = slots.filter((x) => x.slot.day === day).sort((a, b) => u.timeToMin(a.slot.start) - u.timeToMin(b.slot.start));
+    const type = (s) => (M.SLOT_TYPES[s.type] ? tx('slot.' + s.type) : '');
+    const row = (x, label) => {
+      const now = x.slot.day === day && u.timeToMin(x.slot.start) <= min && min < u.timeToMin(x.slot.end);
+      const past = x.slot.day === day && u.timeToMin(x.slot.end) <= min;
+      return `<li class="cl-row${now ? ' is-now' : ''}${past ? ' is-past' : ''}" style="--c:${esc(x.course.color)}">
+        <span class="cl-time" dir="ltr">${esc(x.slot.start)}</span>
+        <a class="cl-t" href="#/course/${esc(x.course.id)}"><b dir="auto">${esc(x.course.name)}</b>
+          <span class="muted small">${[label, type(x.slot), x.slot.room && `<span dir="auto">${esc(x.slot.room)}</span>`, now && t('td.now')].filter(Boolean).join(' · ')}</span></a>
+      </li>`;
+    };
+    let body;
+    if (today.length) body = `<ul class="cl-list">${today.map((x) => row(x, '')).join('')}</ul>`;
+    else {
+      const nx = CT.views.schedule ? CT.views.schedule.nowNext().next : null;
+      body = nx ? `<p class="muted small">${t('td.noClasses')}</p><ul class="cl-list">${row(nx, esc(nx.inDays === 1 ? tx('rel.tomorrow') : ui.dayName(nx.slot.day)))}</ul>` : `<p class="muted small">${t('td.noClasses')}</p>`;
     }
-    return out;
+    return `<section class="card td-classes" aria-labelledby="cl-h">
+        <div class="card-head"><h2 id="cl-h">${t('td.classes')}</h2><a class="small" href="#/schedule">${t('td.schedule')}</a></div>
+        ${body}
+      </section>`;
   }
 
-  function urgentRow({ item, course }) {
-    const n = u.daysUntil(item.due);
-    return `<li class="${n < 0 ? 'overdue' : n <= 1 ? 'soon' : ''}" style="--c:${esc(course.color)}">
-      <button class="check check-sm" role="checkbox" aria-checked="false" data-action="toggle" data-id="${item.id}" aria-label="סמן כהושלם: ${esc(item.title)}">${icon.check}</button>
-      <a href="#/course/${course.id}?item=${item.id}" class="u-title"><span dir="auto">${esc(item.title)}</span>
-        <span class="muted small">${ui.courseDot(course)} ${esc(course.name)}</span></a>
-      <span class="u-when">${u.relDays(item.due)}</span>
-    </li>`;
+  /* ---------- today's progress: points goal + adhkar when on, otherwise plain numbers ---------- */
+  function dailyHTML(st, courses) {
+    const parts = V.slots.daily.map((f) => { try { return f(); } catch (e) { console.error(e); return ''; } }).filter(Boolean);
+    const xpOn = CT.views.xp && CT.views.xp.dailyHTML && parts.length && /class="td-goal/.test(parts.join(''));
+    let plain = '';
+    if (!xpOn) {
+      const doneToday = stats.completedSince(courses, u.today()).length;
+      const minToday = u.sum(st.studyLog.filter((e) => e.date === u.today()), (e) => e.minutes);
+      const streak = stats.streak(st).days;
+      plain = `<div class="td-stats">
+          <div><b>${ui.num(doneToday)}</b><span>${t('td.doneToday')}</span></div>
+          <div><b>${ui.num(minToday)}</b><span>${t('td.minutesToday')}</span></div>
+          <div><b>${ui.num(streak)}</b><span>${t('td.streakDays', { n: streak })}</span></div>
+        </div>`;
+    }
+    return `<section class="card td-daily" aria-labelledby="dy-h">
+        <h2 id="dy-h" class="td-daily-h">${t('td.daily')}</h2>
+        ${plain}${parts.join('')}
+      </section>`;
   }
 
-  function cardHTML(c) {
-    const p = stats.courseProgress(c);
-    const next = stats.nextTask(c);
-    const exam = stats.nextExam(c);
-    const n = exam && u.daysUntil(exam.date);
-    return `
-      <a class="card course-card" href="#/course/${c.id}" style="--c:${esc(c.color)}">
-        <div class="cc-top">
-          <div class="cc-title">
-            <h3 dir="auto">${esc(c.name)} ${ui.outcomeBadge(c)}</h3>
-            <span class="muted small">${[c.number && `<span dir="ltr">${esc(c.number)}</span>`, c.credits && `${esc(c.credits)} נק״ז`].filter(Boolean).join(' · ') || '&nbsp;'}</span>
-          </div>
-          ${ui.ring(p.pct)}
-        </div>
-        <div class="cc-meta">
-          <span class="cc-chip">${p.open ? `${p.done}/${p.total} הושלמו` : '✓ הכול הושלם'}</span>
-          ${exam ? `<span class="cc-chip${n <= 14 ? ' warn' : ''}">⏳ ${n === 0 ? 'מבחן היום' : `${n} ימים ל${esc(exam.label || 'מבחן')}`}</span>` : ''}
-        </div>
-        <div class="cc-next ${next && next.item.due < u.today() ? 'overdue' : ''}">${next
-          ? `<span class="muted">הבא:</span> <span dir="auto">${esc(next.item.title)}</span> · ${u.relDays(next.item.due)}`
-          : '<span class="muted">אין דדליינים קרובים</span>'}</div>
-      </a>`;
-  }
-
-  /** Mark done from the home screen, with the check animation and undo. */
+  /* ---------- actions ---------- */
   function done(id) {
     const f = S.findItem(id);
     if (!f) return;
     S.toggleDone(id);
-    if (CT.views.dashboard.afterDone) CT.views.dashboard.afterDone(id);
-    ui.toast(`✓ ${f.item.title}`, { action: { label: 'בטל', fn: S.undo } });
+    if (V.afterDone) V.afterDone(id);
+    ui.toast(tx('td.doneToast', { title: f.item.title }), { action: { label: tx('common.undo'), fn: S.undo } });
   }
 
-  async function onClick(e) {
+  function onClick(e) {
     const a = e.target.closest('[data-action]');
     if (!a) return;
-    if (a.tagName === 'SUMMARY') return;
     e.preventDefault();
     switch (a.dataset.action) {
       case 'toggle': case 'next-done': done(a.dataset.id); break;
-      case 'next-other': pick++; CT.app.rerender(); break;
+      case 'next-other': pick++; CT.app.rerender(); { const b = document.querySelector('.td-other'); if (b) b.focus(); } break;
       case 'next-five': if (CT.focus) CT.focus.start(a.dataset.id, 5); break;
-      case 'urgent-all': urgentAll = !urgentAll; CT.app.rerender(); break;
-      case 'new-course': CT.views.course.courseForm(); break;
+      case 'agenda-all': agendaAll = !agendaAll; CT.app.rerender(); { const b = document.querySelector('.td-more'); if (b) b.focus(); } break;
       case 'sync-now': CT.cloud.syncNow(); break;
+      case 'moodle-retry': if (CT.views.moodle && CT.views.moodle.syncLink) CT.views.moodle.syncLink({ manual: true }); break;
       default: break;
     }
   }
-
 })(window.CT);

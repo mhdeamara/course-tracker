@@ -115,7 +115,7 @@
     s.lastCoalesce = null;
     s.persist();
     s.emit();
-    CT.ui.toast(`בוטל: ${e.label}`);
+    CT.ui.toast(CT.i18n ? CT.i18n.tx('common.undone', { label: e.label || '' }) : `בוטל: ${e.label}`);
   };
 
   s.subscribe = (fn) => s.listeners.push(fn);

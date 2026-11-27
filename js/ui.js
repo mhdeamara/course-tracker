@@ -81,9 +81,11 @@
     return api;
   };
 
-  ui.confirm = (msg, okLabel = tx('common.ok'), danger = false) => new Promise((res) => {
+  /** `opts.localized`: the message is translated UI (see ui.modal). */
+  ui.confirm = (msg, okLabel = tx('common.ok'), danger = false, opts = {}) => new Promise((res) => {
     let answered = false;
     ui.modal({
+      localized: !!opts.localized,
       title: tx('common.confirm'),
       body: `<p class="pre" dir="auto">${u.esc(msg)}</p>`,
       actions: [
@@ -94,9 +96,10 @@
     });
   });
 
-  ui.prompt = (title, value = '', label = '') => new Promise((res) => {
+  ui.prompt = (title, value = '', label = '', opts = {}) => new Promise((res) => {
     let answered = false;
     const m = ui.modal({
+      localized: !!opts.localized,
       title,
       body: `<label class="field"><span>${u.esc(label || title)}</span><input type="text" dir="auto" value="${u.esc(value)}"></label>`,
       actions: [
@@ -192,6 +195,14 @@
   };
   /** Reorders `arr` (objects with id) to match `ids`. */
   ui.reorder = (arr, ids) => { arr.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)); };
+  /** Reorder only the items in `ids` (e.g. the open rows while the done rows are collapsed): they keep the slots they
+   * had in `arr`, in the new order; every other item stays exactly where it was. */
+  ui.reorderSome = (arr, ids) => {
+    const set = new Set(ids), byId = new Map(arr.map((x) => [x.id, x]));
+    const slots = [];
+    arr.forEach((x, i) => { if (set.has(x.id)) slots.push(i); });
+    ids.filter((id) => byId.has(id)).forEach((id, k) => { arr[slots[k]] = byId.get(id); });
+  };
 
   /* ---------- HTML snippets ---------- */
   ui.bar = (pct, label = '', small = false) => `
@@ -207,19 +218,40 @@
       <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${pct}<tspan class="ring-unit">%</tspan></text>
     </svg>`;
   };
-  ui.statusPill = (status) => `<span class="pill st-${status}">${u.esc(CT.model.STATUSES[status].label)}</span>`;
+  /** Item status / course outcome labels in the interface language (the stored values never change). */
+  ui.statusLabel = (status) => tx('status.' + (CT.model.STATUSES[status] ? status : 'todo'));
+  ui.outcomeLabel = (type, short = false) => (CT.model.OUTCOMES[type] ? tx(`outcome.${type}${short ? '.short' : ''}`) : String(type || ''));
+  ui.statusPill = (status) => `<span class="pill st-${status}">${u.esc(ui.statusLabel(status))}</span>`;
+  /** Locale-aware display dates for stored YYYY-MM-DD values: 'short' 4 Dec · 'full' 4 December 2026 · 'wd' Fri, 4 Dec. */
+  const DATE_OPTS = { short: { day: 'numeric', month: 'short' }, full: { day: 'numeric', month: 'long', year: 'numeric' }, wd: { weekday: 'short', day: 'numeric', month: 'short' }, long: { weekday: 'long', day: 'numeric', month: 'long' } };
+  ui.date = (iso, style = 'short') => {
+    if (!iso) return '';
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? u.parseDate(iso) : new Date(iso);
+    if (isNaN(d)) return '';
+    try { return new Intl.DateTimeFormat(I18N.locale(), DATE_OPTS[style] || DATE_OPTS.short).format(d); } catch (e) { return u.fmtDateFull(u.isoDate(d)); }
+  };
+  ui.num = (n, digits) => { try { return Number(n).toLocaleString(I18N.locale(), digits == null ? undefined : { maximumFractionDigits: digits }); } catch (e) { return String(n); } };
+  /** Weekday name for a schedule day index (0 = Sunday), in the interface language. */
+  ui.dayName = (i, style = 'long') => { try { return new Intl.DateTimeFormat(I18N.locale(), { weekday: style }).format(new Date(2026, 10, 29 + Number(i))); } catch (e) { return u.DAYS[i] || ''; } };
+  /** "today" / "tomorrow" / "in 3 days" / "2 days overdue" for a due date, translated. */
+  ui.rel = (iso) => {
+    if (!iso) return '';
+    const n = u.daysUntil(iso);
+    if (n === 0) return tx('rel.today');
+    if (n === 1) return tx('rel.tomorrow');
+    if (n === -1) return tx('rel.yesterday');
+    return n < 0 ? tx('rel.late', { n: -n }) : tx('rel.in', { n });
+  };
   ui.courseDot = (c) => `<span class="dot" style="background:${u.esc(c.color)}"></span>`;
   ui.empty = (msg) => `<div class="empty">${msg}</div>`;
   /** "הושלם · 87" style badge for a finished course ('' while in progress). */
   ui.outcomeBadge = (c) => {
     const o = c && c.outcome;
     if (!o || !o.type) return '';
-    const M = CT.model;
-    const def = M.OUTCOMES[o.type] || { short: o.type };
-    const g = u.isNum(o.grade) ? ` · ${+o.grade.toFixed(2)}` : '';
+    const g = u.isNum(o.grade) ? ` · ${ui.num(+o.grade.toFixed(2))}` : '';
     const passMark = (CT.store && CT.store.state && CT.store.state.settings.gpa.passGrade) || 55;
     const bad = o.type === 'failed' || o.type === 'withdrawn' || (o.type === 'graded' && u.isNum(o.grade) && o.grade < passMark);
-    return `<span class="pill outcome ${bad ? 'outcome-bad' : 'outcome-ok'}" title="${u.esc(def.label)}${o.note ? ' — ' + u.esc(o.note) : ''}">${u.esc(def.short)}${g}</span>`;
+    return `<span class="pill outcome ${bad ? 'outcome-bad' : 'outcome-ok'}" title="${u.esc(ui.outcomeLabel(o.type))}${o.note ? ' — ' + u.esc(o.note) : ''}">${u.esc(ui.outcomeLabel(o.type, true))}${g}</span>`;
   };
 
   /** Status choice menu for an item. */
@@ -227,9 +259,9 @@
     const f = CT.store.findItem(itemId);
     if (!f) return;
     ui.menu(anchor, CT.model.STATUS_ORDER.map((s) => ({
-      label: CT.model.STATUSES[s].label, active: f.item.status === s,
+      label: ui.statusLabel(s), active: f.item.status === s,
       dot: `var(--st-${s})`, fn: () => CT.store.setStatus(itemId, s),
-    })));
+    })), { localized: true });
   };
 
   CT.ui = ui;

@@ -225,29 +225,29 @@
   };
 
   /* ---------- home card (dashboard top slot) ---------- */
+  /** Compact, translated row for the daily-progress card on "היום". The adhkar names stay in Arabic. */
   V.homeHTML = () => {
     if (!A.on(st())) return '';
     const p = A.period(cfg());
     if (!p) return '';
     if (!doc) { if (!loadErr) V.load().then(() => CT.app && CT.app.rerender()).catch(() => {}); return ''; }
+    const I = CT.i18n;
     const prog = A.progress(st(), doc, p);
     const win = A.windows(cfg());
-    const until = tm(win[p][1]);
     if (prog.done) {
-      return `<div class="adk-home done" role="status"><span lang="ar" dir="rtl">${NAMES[p]}</span><span>הושלם ✓</span>
-        <button class="btn btn-ghost btn-small" data-adk-home="open" data-p="${p}">לפתוח שוב</button></div>`;
+      return `<div class="adk-row is-done" role="status"><span class="adk-row-t"><b lang="ar" dir="rtl">${NAMES[p]}</b><span class="muted small">${I.t('adkd.done')}</span></span>
+        <button class="btn btn-ghost btn-small" data-adk-home="open" data-p="${p}">${I.t('adkd.reopen')}</button></div>`;
     }
     const streak = A.streak(st(), p);
-    return `<section class="card adk-home" aria-label="${HE[p]}">
-        <div class="adk-home-t">
-          <h2 lang="ar" dir="rtl">${NAMES[p]}</h2>
-          <p class="muted small">${prog.full ? `${prog.full} מתוך ${prog.total}` : `${prog.total} אזכרות`} · עד ${until}${streak > 1 ? ` · ${streak} ימים ברצף` : ''}</p>
-        </div>
-        <div class="adk-home-a">
-          <button class="btn btn-primary" data-adk-home="open" data-p="${p}">${prog.full ? 'להמשיך' : 'להתחיל'}</button>
-          <button class="btn btn-ghost btn-small" data-adk-home="mark" data-p="${p}" title="מסמן כבוצע (בלי נקודות)">כבר אמרתי</button>
-        </div>
-      </section>`;
+    const sub = [prog.full ? I.t('adkd.progress', { n: prog.full, m: prog.total }) : I.t('adkd.count', { n: prog.total }),
+      I.t('adkd.until', { time: A.fmt(win[p][1]) }), streak > 1 ? I.t('adkd.streak', { n: streak }) : ''].filter(Boolean).join(' · ');
+    return `<div class="adk-row" role="group" aria-label="${I.t('adkd.label.' + p)}">
+        <span class="adk-row-t"><b lang="ar" dir="rtl">${NAMES[p]}</b><span class="muted small">${sub}</span></span>
+        <span class="adk-row-a">
+          <button class="btn btn-small btn-primary" data-adk-home="open" data-p="${p}">${prog.full ? I.t('adkd.continue') : I.t('adkd.start')}</button>
+          <button class="btn btn-small btn-ghost" data-adk-home="mark" data-p="${p}" title="${I.t('adkd.markTitle')}">${I.t('adkd.mark')}</button>
+        </span>
+      </div>`;
   };
   document.addEventListener('click', (e) => {
     const b = e.target.closest && e.target.closest('[data-adk-home]');
@@ -519,6 +519,6 @@
       .then((ok) => { if (ok) S.commit('איפוס הגדרות אזכרות', (s) => A.reset(s)); });
   });
 
-  // the home card sits at the top of the "היום" screen
-  if (CT.views.dashboard && CT.views.dashboard.slots) CT.views.dashboard.slots.top.push(V.homeHTML);
+  // the home row sits in the daily-progress card of the "היום" screen
+  if (CT.views.dashboard && CT.views.dashboard.slots) CT.views.dashboard.slots.daily.push(V.homeHTML);
 })(window.CT);

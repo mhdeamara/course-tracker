@@ -78,6 +78,14 @@
     return { route: parts[0] || '', id: parts[1], params };
   };
 
+  /* pages whose interface is fully translated: #main follows the interface language there; elsewhere it stays
+   * Hebrew/RTL content until those pages are translated */
+  const TRANSLATED = new Set(['', 'courses', 'course']);
+  function markMain(main, translated) {
+    if (translated) { main.removeAttribute('data-ct-content'); I18N.localized(main); }
+    else { main.removeAttribute('data-ct-localized'); I18N.content(main); }
+  }
+
   app.rerender = () => {
     const { route, id, params } = parseHash();
     const main = document.getElementById('main');
@@ -93,18 +101,18 @@
       catalog: () => views.catalog.render(main, params),
       semesters: () => views.semesters.render(main, { id, ...params }),
       grades: () => views.gpa.render(main, params),
-      // course list of the active semester (the semester page) until the dedicated courses page (stage D)
-      courses: () => views.semesters.render(main, { ...params, id: S.state.settings.activeSemesterId }),
+      courses: () => views.courses.render(main, params),
       settings: () => views.settings.render(main, params),
       moodle: () => views.moodle.render(main, params),
       xp: () => views.xp.render(main, params),
       adhkar: () => views.adhkar.render(main, params),
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
-    const fn = map[route] && (route === '' || route === 'course' || (route === 'courses' ? views.semesters : views[routeKey])) ? map[route] : map[''];
+    const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
     const pathNow = location.hash.split('?')[0];
     const entering = app.lastPath !== pathNow; // a new page (not a re-render after an edit) fades in
     app.lastPath = pathNow;
+    markMain(main, TRANSLATED.has(fn === map[''] ? '' : route));
     fn();
     if (entering) {
       main.classList.remove('route-in'); void main.offsetWidth; main.classList.add('route-in');
@@ -424,9 +432,9 @@
     renderLockBar();
   }
 
-  /* ---------- language switch: shell only ----------
-   * #main, open dialogs and overlays are left alone, so the route, scroll position, unsaved input and the timer stay
-   * as they are. Nothing is committed to the store and nothing is pushed to the cloud. */
+  /* ---------- language switch ----------
+   * The shell is redrawn; translated pages are re-rendered (see the end), others and open dialogs are left alone, so
+   * the route, scroll position, unsaved input and the timer stay as they are. Nothing is committed, nothing pushed. */
   function onLangChange() {
     ui.closeMenu();
     const old = document.getElementById('search');
@@ -445,6 +453,19 @@
     renderLockBar();
     if (CT.timer) CT.timer.renderChip();
     if (CT.views.notifications) CT.views.notifications.refresh();
+    // a translated page is drawn again in the new language; the route, scroll position, typed text (fields marked
+    // data-keep) and keyboard focus are kept. Pages not translated yet are left alone.
+    if (TRANSLATED.has(route)) {
+      const a = document.activeElement;
+      const main = document.getElementById('main');
+      const keep = a && main.contains(a) ? a.getAttribute('data-keep') : null;
+      const sel = keep && typeof a.selectionStart === 'number' ? [a.selectionStart, a.selectionEnd] : null;
+      const vals = [...main.querySelectorAll('[data-keep]')].filter((x) => x.value).map((x) => [x.getAttribute('data-keep'), x.value]);
+      app.rerender();
+      vals.forEach(([k, v]) => { const x = main.querySelector(`[data-keep="${CSS.escape(k)}"]`); if (x && !x.value) x.value = v; });
+      const b = keep && main.querySelector(`[data-keep="${CSS.escape(keep)}"]`);
+      if (b) { b.focus({ preventScroll: true }); if (sel) b.setSelectionRange(sel[0], sel[1]); }
+    }
   }
 
   /* ---------- boot ---------- */

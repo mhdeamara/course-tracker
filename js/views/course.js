@@ -1,19 +1,21 @@
-/* views/course.js — course page: header, category tables, items, notes, filters, bulk add, drag, course forms. */
+/* views/course.js — the course workspace: header (emblem, details, progress, exams), Items / Grades / Notebook tabs,
+ * categories with their progress, items (completed ones folded per category), notes, filters, bulk add, drag, and the
+ * course dialogs (create / edit / finish). Frequent actions stay on the row; the rest are in the row's menu.
+ * Fully translated (CT.i18n); course names, items, notes and Moodle content are shown exactly as stored. */
 (function (CT) {
   'use strict';
   const { u, ui, stats } = CT;
   const S = CT.store, M = CT.model;
+  const I18N = CT.i18n, t = I18N.t, tx = I18N.tx;
   const esc = u.esc, icon = u.icon;
   const V = {};
   CT.views = CT.views || {};
   CT.views.course = V;
 
-  // view-only state (not saved)
-  const view = { courseId: null, tab: 'items', filter: 'all', tag: '', openNotes: new Set(), focusId: null };
+  // view-only state (not saved): filter, open notes, folded "completed" groups, quick-add drafts per category
+  const view = { courseId: null, tab: 'items', filter: 'all', tag: '', openNotes: new Set(), focusId: null, showDone: new Set(), drafts: {} };
 
-  const FILTERS = [
-    ['all', 'הכול'], ['open', 'לא הושלמו'], ['review', 'צריך לחזור'], ['flag', '⭐ לחזרה למבחן'], ['due', 'עם תאריך יעד'],
-  ];
+  const FILTERS = [['all', 'cw.f.all'], ['open', 'cw.f.open'], ['review', 'cw.f.review'], ['flag', 'cw.f.flag'], ['due', 'cw.f.due']];
   const matches = (it) => {
     if (view.tag && !it.tags.includes(view.tag)) return false;
     switch (view.filter) {
@@ -29,58 +31,58 @@
   /* ================= rendering ================= */
   V.render = (root, params = {}) => {
     const c = S.course(params.id);
-    if (!c) { root.innerHTML = ui.empty('הקורס לא נמצא. <a href="#/">חזרה לדשבורד</a>'); return; }
-    if (view.courseId !== c.id) Object.assign(view, { courseId: c.id, tab: 'items', filter: 'all', tag: '', focusId: null });
-    if (params.tab) view.tab = params.tab;
-    if (params.item) Object.assign(view, { tab: 'items', filter: 'all', tag: '' }); // jumping to an item (search / dashboard)
-    const tabs = [['items', 'פריטים']];
-    if (CT.views.grades) tabs.push(['grades', 'ציונים']);
-    if (CT.views.notebook) tabs.push(['notebook', 'מחברת מושגים']);
-    if (!tabs.some((t) => t[0] === view.tab)) view.tab = 'items';
+    if (!c) { root.innerHTML = ui.empty(`${t('cw.notFound')} <a href="#/courses">${t('cw.toCourses')}</a>`); return; }
+    if (view.courseId !== c.id) Object.assign(view, { courseId: c.id, tab: 'items', filter: 'all', tag: '', focusId: null, showDone: new Set() });
+    view.tab = params.tab || 'items'; // the address holds the tab (setTab writes it), so links and reloads agree
+    if (params.item) {
+      Object.assign(view, { tab: 'items', filter: 'all', tag: '' }); // jumping to an item (search / home / notifications)
+      const f = S.findItem(params.item);
+      if (f && f.item.status === 'done') view.showDone.add(f.cat.id); // unfold its group so it can be shown
+    }
+    const tabs = [['items', 'cw.tab.items']];
+    if (CT.views.grades) tabs.push(['grades', 'cw.tab.grades']);
+    if (CT.views.notebook) tabs.push(['notebook', 'cw.tab.notebook']);
+    if (!tabs.some((x) => x[0] === view.tab)) view.tab = 'items';
 
     const p = stats.courseProgress(c);
     const sem = S.semester(c.semesterId);
     const meta = [
-      c.number && `<span dir="ltr">${esc(c.number)}</span>`, sem && esc(sem.name),
-      c.credits && `${esc(c.credits)} נק״ז`, c.staff && `<span dir="auto">${esc(c.staff)}</span>`,
-    ].filter(Boolean).join(' · ');
-    const links = c.links.filter((l) => u.safeUrl(l.url)).map((l) =>
-      `<a class="chip-link" href="${esc(u.safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${icon.link}<span dir="auto">${esc(l.label || l.url)}</span></a>`).join('');
+      c.number && `<span class="cw-num" dir="ltr">${esc(c.number)}</span>`, sem && `<span dir="auto">${esc(sem.name)}</span>`,
+      c.credits !== '' && c.credits != null && t('cp.credits', { n: ui.num(c.credits) }), c.staff && `<span dir="auto">${esc(c.staff)}</span>`,
+    ].filter(Boolean).join('<span aria-hidden="true"> · </span>');
     const exams = (c.exams || []).filter((e) => e.date).sort((a, b) => a.date.localeCompare(b.date)).map((e) => {
       const n = u.daysUntil(e.date);
-      return `<span class="exam-chip${n < 0 ? ' past' : n <= 14 ? ' near' : ''}">${esc(e.label || 'מבחן')} · ${u.fmtDateFull(e.date)}${n >= 0 ? ` · <b>${n === 0 ? 'היום!' : `עוד ${n} ימים`}</b>` : ''}</span>`;
+      return `<span class="cw-exam${n < 0 ? ' is-past' : n <= 14 ? ' is-near' : ''}">${icon.cap}<span dir="auto">${esc(e.label || tx('td.exam'))}</span><span class="muted">${esc(ui.date(e.date, 'short'))}</span>${n >= 0 ? `<b>${n === 0 ? t('rel.today') : t('td.inDays', { n })}</b>` : ''}</span>`;
     }).join('');
+    const finishedLine = M.isFinished(c) && (c.outcome.date || c.outcome.note)
+      ? `<p class="cw-meta small">${c.outcome.date ? t('cw.finishedOn', { date: ui.date(c.outcome.date, 'full') }) : ''}${c.outcome.date && c.outcome.note ? ' · ' : ''}<span dir="auto">${esc(c.outcome.note || '')}</span></p>` : '';
 
     root.innerHTML = `
-      <article class="course-page" style="--c:${esc(c.color)}">
-        <header class="card course-head">
-          <div class="course-head-top">
-            <div class="course-ring">${ui.ring(p.pct, 76, 7)}</div>
-            <div class="course-title">
-              <h1 dir="auto">${esc(c.name)} ${ui.outcomeBadge(c)}${c.archived ? ' <span class="pill pill-muted">בארכיון</span>' : ''}</h1>
-              ${meta ? `<div class="meta">${meta}</div>` : ''}
-              ${M.isFinished(c) && (c.outcome.date || c.outcome.note) ? `<div class="meta small">${c.outcome.date ? `הסתיים ${u.fmtDateFull(c.outcome.date)}` : ''}${c.outcome.date && c.outcome.note ? ' · ' : ''}<span dir="auto">${esc(c.outcome.note || '')}</span></div>` : ''}
+      <article class="cw" style="--c:${esc(c.color)}">
+        <header class="card cw-head">
+          <span class="cw-art">${CT.art.svg(c)}</span>
+          <div class="cw-id">
+            <div class="cw-title-row">
+              <h1 dir="auto">${esc(c.name)}</h1>
+              <button class="icon-btn cw-switch no-print" data-action="switch" aria-label="${t('cw.switch')}" aria-haspopup="menu" title="${t('cw.switch')}">${icon.chev}</button>
             </div>
-            <div class="head-actions no-print">
-              <button class="btn${M.isFinished(c) ? '' : ' btn-primary'}" data-action="finish">${icon.award}<span>${M.isFinished(c) ? 'עריכת הסיום' : 'סיים קורס'}</span></button>
-              <button class="btn" data-action="edit-course">${icon.edit}<span>עריכת קורס</span></button>
-              <button class="icon-btn" data-action="course-menu" aria-label="פעולות נוספות לקורס">${icon.more}</button>
-            </div>
+            <p class="cw-meta">${meta}${ui.outcomeBadge(c)}${c.archived ? `<span class="pill pill-muted">${t('cw.archived')}</span>` : ''}</p>
+            ${finishedLine}
           </div>
-          ${c.description ? `<p class="desc" dir="auto">${u.rich(c.description)}</p>` : ''}
-          ${links ? `<div class="links no-print">${links}</div>` : ''}
-          ${exams ? `<div class="exams">${exams}</div>` : ''}
-          <div class="course-progress">
-            ${c.categories.map((cat) => {
-              const cp = stats.progress(cat.items);
-              return `<div class="cp-item" title="${esc(cat.name)}: ${cp.done}/${cp.total}"><span class="cp-name" dir="auto">${esc(cat.name)}</span>${ui.bar(cp.pct, cat.name, true)}<span class="cp-num">${cp.done}/${cp.total}</span></div>`;
-            }).join('')}
+          <div class="cw-ring">${ui.ring(p.pct, 60, 6)}</div>
+          <div class="cw-actions no-print">
+            <button class="btn" data-action="bulk-add">${icon.plus}<span>${t('cw.items')}</span></button>
+            <button class="icon-btn" data-action="course-menu" aria-label="${t('cw.more')}" aria-haspopup="menu">${icon.more}</button>
           </div>
+          ${exams ? `<div class="cw-exams">${exams}</div>` : ''}
         </header>
-        ${tabs.length > 1 ? `<nav class="tabs no-print" role="tablist" aria-label="חלקי הקורס">
-          ${tabs.map(([k, l]) => `<button role="tab" aria-selected="${view.tab === k}" class="tab${view.tab === k ? ' active' : ''}" data-action="tab" data-tab="${k}">${l}</button>`).join('')}
-        </nav>` : ''}
-        <div class="tab-panel"></div>
+        <div class="cw-bar no-print">
+          ${tabs.length > 1 ? `<div class="cw-tabs" role="tablist" aria-label="${t('cw.tabs')}">
+            ${tabs.map(([k, l]) => `<button role="tab" id="tab-${k}" aria-selected="${view.tab === k}" aria-controls="cw-panel" tabindex="${view.tab === k ? 0 : -1}" class="cw-tab${view.tab === k ? ' is-on' : ''}" data-tab="${k}">${t(l)}</button>`).join('')}
+          </div>` : ''}
+          ${view.tab === 'items' ? filtersHTML(c) : ''}
+        </div>
+        <div class="tab-panel" id="cw-panel" role="tabpanel" aria-labelledby="tab-${view.tab}"></div>
       </article>`;
 
     const panel = root.querySelector('.tab-panel');
@@ -92,48 +94,57 @@
     if (params.item) highlightItem(root, params.item);
   };
 
-  function renderItems(panel, c) {
+  function filtersHTML(c) {
     const tags = S.courseTags(c);
+    return `<div class="cw-filters" role="group" aria-label="${t('cw.filter')}">
+        ${FILTERS.map(([k, l]) => `<button class="cw-f${view.filter === k ? ' is-on' : ''}" aria-pressed="${view.filter === k}" data-action="filter" data-filter="${k}">${k === 'flag' ? icon.star : ''}<span>${t(l)}</span></button>`).join('')}
+        ${tags.length ? `<select class="chip-select" data-action="tag-filter" aria-label="${t('cw.tagFilter')}">
+          <option value="">${t('cw.allTags')}</option>${tags.map((x) => `<option ${x === view.tag ? 'selected' : ''}>${esc(x)}</option>`).join('')}
+        </select>` : ''}
+      </div>`;
+  }
+
+  function renderItems(panel, c) {
     const dragOk = !filtering();
     const cats = c.categories.map((cat) => {
       const rows = cat.items.filter(matches);
       if (filtering() && !rows.length) return '';
+      const open = rows.filter((it) => it.status !== 'done');
+      const done = rows.filter((it) => it.status === 'done');
+      const showDone = view.showDone.has(cat.id);
       const p = stats.progress(cat.items);
+      const draft = view.drafts[cat.id] || '';
       return `
-        <section class="card cat" data-id="${cat.id}">
+        <section class="card cat" data-id="${cat.id}" aria-labelledby="cat-${cat.id}">
           <header class="cat-head">
-            ${dragOk ? `<button class="drag-handle no-print" aria-label="גרור כדי לסדר את הקטגוריה" title="גרירה לסידור">${icon.grip}</button>` : ''}
-            <h2 class="cat-name" dir="auto" data-action="rename-cat" title="לחיצה כפולה לשינוי שם">${esc(cat.name)}</h2>
-            <span class="muted nowrap cat-count">${p.done}/${p.total}</span>
-            <div class="cat-bar">${ui.bar(p.pct, `התקדמות ב${cat.name}`, true)}</div>
-            <span class="pct">${p.pct}%</span>
-            <button class="icon-btn no-print" data-action="cat-menu" aria-label="פעולות לקטגוריה ${esc(cat.name)}">${icon.more}</button>
+            ${dragOk ? `<button class="drag-handle no-print" aria-label="${t('cw.dragCat')}" title="${t('cw.dragCat')}">${icon.grip}</button>` : ''}
+            <h2 class="cat-name" id="cat-${cat.id}" dir="auto" data-action="rename-cat" title="${t('cw.renameHint')}">${esc(cat.name)}</h2>
+            <span class="cat-count" aria-label="${t('cw.catCount', { done: p.done, total: p.total })}">${ui.num(p.done)}/${ui.num(p.total)}</span>
+            <div class="cat-bar">${ui.bar(p.pct, tx('cw.catProgress', { name: cat.name }), true)}</div>
+            <button class="icon-btn no-print" data-action="cat-menu" aria-label="${t('cw.catMenu', { name: cat.name })}" aria-haspopup="menu">${icon.more}</button>
           </header>
           <div class="rows" data-cat="${cat.id}">
-            ${rows.map((it) => rowHTML(it, dragOk)).join('') || '<div class="rows-empty muted">אין פריטים עדיין</div>'}
+            ${open.map((it) => rowHTML(it, dragOk)).join('') || (done.length ? `<p class="rows-empty muted small">${icon.check}<span>${t('cw.catAllDone')}</span></p>` : `<p class="rows-empty muted small">${t('cw.catEmpty')}</p>`)}
           </div>
+          ${done.length ? `<button class="done-toggle no-print" data-action="toggle-done" aria-expanded="${showDone}" aria-controls="done-${cat.id}">
+              ${icon.chev}<span>${t('cw.doneCount', { n: done.length })}</span></button>
+            <div class="rows rows-done" id="done-${cat.id}" data-cat="${cat.id}"${showDone ? '' : ' hidden'}>${showDone ? done.map((it) => rowHTML(it, dragOk)).join('') : ''}</div>` : ''}
           <form class="quick-add no-print" data-cat="${cat.id}">
-            <input type="text" dir="auto" placeholder="+ פריט חדש ב${esc(cat.name)} (Enter)" aria-label="הוספת פריט ל${esc(cat.name)}">
+            ${icon.plus}<input type="text" dir="auto" value="${esc(draft)}" placeholder="${t('cw.quickAdd')}" aria-label="${t('cw.quickAddLabel', { name: cat.name })}" data-keep="qa-${cat.id}">
           </form>
         </section>`;
     }).join('');
 
     panel.innerHTML = `
-      <div class="toolbar no-print">
-        <div class="chips" role="group" aria-label="סינון פריטים">
-          ${FILTERS.map(([k, l]) => `<button class="chip${view.filter === k ? ' active' : ''}" aria-pressed="${view.filter === k}" data-action="filter" data-filter="${k}">${l}</button>`).join('')}
-          ${tags.length ? `<select class="chip-select" data-action="tag-filter" aria-label="סינון לפי תגית">
-            <option value="">כל התגיות</option>${tags.map((t) => `<option ${t === view.tag ? 'selected' : ''}>${esc(t)}</option>`).join('')}
-          </select>` : ''}
+      <div class="cw-body">
+        <div class="cw-main">
+          <div class="cats">${cats || (filtering()
+            ? ui.empty(t('cw.noMatch'))
+            : ui.empty(`${t('cw.noCats')}<br><button class="btn btn-primary" data-action="template">${t('cw.makeTemplate')}</button>`))}</div>
+          <div class="cw-add no-print"><button class="btn btn-ghost" data-action="add-cat">${icon.plus}<span>${t('cw.addCat')}</span></button></div>
         </div>
-        <div class="toolbar-actions">
-          <button class="btn" data-action="bulk-add" title="יצירת הרבה פריטים בבת אחת">${icon.plus}<span>פריטים בבת אחת</span></button>
-          <button class="btn" data-action="add-cat">${icon.plus}<span>קטגוריה</span></button>
-        </div>
-      </div>
-      <div class="cats">${cats || (filtering()
-        ? ui.empty('אין פריטים שמתאימים לסינון.')
-        : ui.empty(`אין עדיין קטגוריות בקורס.<br><button class="btn btn-primary" data-action="template">צור מבנה סטנדרטי</button>`))}</div>`;
+        ${asideHTML(c)}
+      </div>`;
 
     bindItems(panel, c);
     ui.justChecked = null;
@@ -144,36 +155,74 @@
     }
   }
 
+  /** Side column (stacks under the items on phones): grade estimate, weekly hours, links and description. */
+  function asideHTML(c) {
+    const parts = [];
+    const comps = c.grade && c.grade.components || [];
+    if (comps.length && CT.grades) {
+      const r = CT.grades.compute(c.grade);
+      const big = r.final != null ? r.final : r.avgSoFar;
+      parts.push(`<section class="card cw-side-card" aria-labelledby="gs-h">
+          <div class="card-head"><h2 id="gs-h">${t(r.final != null ? 'cw.gradeFinal' : 'cw.gradeSoFar')}</h2><button class="linkish small" data-action="tab-grades">${t('cw.tab.grades')}</button></div>
+          <p class="cw-big"><b>${u.isNum(big) ? ui.num(big, 1) : '—'}</b>${c.grade.target ? `<span class="muted small">${t('cw.target', { n: ui.num(c.grade.target) })}</span>` : ''}</p>
+          <ul class="cw-kv">${comps.map((x) => `<li><span dir="auto">${esc(x.name || tx('cw.component'))}</span><span class="muted small">${ui.num(Number(x.weight) || 0)}%</span><b>${u.isNum(x.score) ? ui.num(x.score) : '—'}</b></li>`).join('')}</ul>
+        </section>`);
+    }
+    const slots = (c.schedule || []).slice().sort((a, b) => a.day - b.day || u.timeToMin(a.start) - u.timeToMin(b.start));
+    if (slots.length) {
+      parts.push(`<section class="card cw-side-card" aria-labelledby="hr-h">
+          <div class="card-head"><h2 id="hr-h">${t('cw.hours')}</h2><a class="small" href="#/schedule">${t('td.schedule')}</a></div>
+          <ul class="cw-kv">${slots.map((s) => `<li><span>${esc(M.SLOT_TYPES[s.type] ? tx('slot.' + s.type) : '')} · ${esc(ui.dayName(s.day, 'short'))}</span><span class="muted small" dir="auto">${esc(s.room || '')}</span><b dir="ltr">${esc(s.start)}–${esc(s.end)}</b></li>`).join('')}</ul>
+        </section>`);
+    }
+    const links = (c.links || []).filter((l) => u.safeUrl(l.url));
+    if (links.length || c.description) {
+      parts.push(`<section class="card cw-side-card" aria-labelledby="ln-h">
+          <div class="card-head"><h2 id="ln-h">${t('cw.about')}</h2></div>
+          ${c.description ? `<p class="cw-desc" dir="auto">${u.rich(c.description)}</p>` : ''}
+          ${links.length ? `<div class="cw-links">${links.map((l) => `<a class="chip-link" href="${esc(u.safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${icon.link}<span dir="auto">${esc(l.label || l.url)}</span></a>`).join('')}</div>` : ''}
+        </section>`);
+    }
+    return parts.length ? `<aside class="cw-aside" aria-label="${t('cw.asideLabel')}">${parts.join('')}</aside>` : '';
+  }
+
   function rowHTML(it, dragOk) {
     const open = view.openNotes.has(it.id);
     const done = it.status === 'done';
     const days = it.due ? u.daysUntil(it.due) : null;
-    const dueCls = !it.due ? 'empty' : done ? '' : days < 0 ? 'overdue' : days <= 3 ? 'soon' : '';
+    const dueCls = done ? '' : days < 0 ? ' is-late' : days <= 3 ? ' is-soon' : '';
     const firstLine = (it.note || '').split('\n')[0].slice(0, 120);
     const safeLink = u.safeUrl(it.link);
+    const subs = it.subs || [];
+    const subsDone = subs.filter((s) => s.done).length;
+    const showStatus = it.status === 'doing' || it.status === 'review';
+    const meta = [
+      it.due ? `<button class="due-chip${dueCls}" data-action="edit-due" title="${esc(ui.date(it.due, 'full'))}" aria-label="${t('cw.dueLabel', { date: ui.date(it.due, 'full') })}" tabindex="-1">${dueCls === ' is-late' ? icon.alert : icon.calendar}<span>${esc(done ? ui.date(it.due, 'short') : ui.rel(it.due))}</span></button>` : '',
+      showStatus ? `<button class="pill st-${it.status}" data-action="status-menu" aria-label="${t('cw.statusLabel', { status: ui.statusLabel(it.status) })}" tabindex="-1">${esc(ui.statusLabel(it.status))}</button>` : '',
+      subs.length ? `<button class="subs-chip${subsDone === subs.length ? ' all' : ''}" data-action="subs" tabindex="-1" aria-label="${t('cw.subs', { n: subsDone, m: subs.length })}">${icon.check}${ui.num(subsDone)}/${ui.num(subs.length)}</button>` : '',
+      it.tags.map((x) => `<span class="tag" dir="auto">${esc(x)}</span>`).join(''),
+      CT.views.moodle.badges(it),
+      it.note && !open ? `<span class="note-snippet" data-action="toggle-note" dir="auto">${icon.note}<span>${esc(firstLine)}</span></span>` : '',
+    ].filter(Boolean).join('');
     return `
-      <div class="row st-${it.status}${it.flag ? ' flagged' : ''}${ui.justChecked === it.id ? ' just-checked' : ''}" data-id="${it.id}" tabindex="0" aria-label="${esc(it.title)} — ${M.STATUSES[it.status].label}">
+      <div class="row st-${it.status}${it.flag ? ' flagged' : ''}${ui.justChecked === it.id ? ' just-checked' : ''}" data-id="${it.id}" tabindex="0" aria-label="${esc(it.title)} — ${esc(ui.statusLabel(it.status))}">
         <div class="row-main">
-          ${dragOk ? `<button class="drag-handle no-print" tabindex="-1" aria-label="גרור לסידור">${icon.grip}</button>` : ''}
-          <button class="check" role="checkbox" aria-checked="${done}" data-action="toggle" aria-label="סימון הושלם: ${esc(it.title)}" tabindex="-1">${icon.check}</button>
+          ${dragOk ? `<button class="drag-handle no-print" tabindex="-1" aria-label="${t('cw.dragItem')}">${icon.grip}</button>` : ''}
+          <button class="check" role="checkbox" aria-checked="${done}" data-action="toggle" aria-label="${t('cw.markDone', { title: it.title })}" tabindex="-1">${icon.check}</button>
           <div class="row-title">
-            <span class="title-text" data-action="edit-title" dir="auto">${esc(it.title)}</span>
-            ${safeLink ? `<a class="row-link" href="${esc(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="פתח קישור" tabindex="-1">${icon.link}</a>` : ''}
-            ${it.tags.map((t) => `<span class="tag" dir="auto">${esc(t)}</span>`).join('')}
-            ${CT.views.moodle.badges(it)}
-            ${(it.subs || []).length ? `<button class="subs-chip${it.subs.every((s) => s.done) ? ' all' : ''}" data-action="subs" tabindex="-1" aria-label="תתי-משימות: ${it.subs.filter((s) => s.done).length} מתוך ${it.subs.length}">☑ ${it.subs.filter((s) => s.done).length}/${it.subs.length}</button>` : ''}
-            ${it.note && !open ? `<div class="note-snippet" data-action="toggle-note" dir="auto">${icon.note}${esc(firstLine)}</div>` : ''}
+            <span class="title-line"><span class="title-text" data-action="edit-title" dir="auto">${esc(it.title)}</span>${safeLink ? `<a class="row-link" href="${esc(safeLink)}" target="_blank" rel="noopener noreferrer" aria-label="${t('cw.openLink')}" tabindex="-1">${icon.link}</a>` : ''}</span>
+            ${meta ? `<span class="row-meta">${meta}</span>` : ''}
           </div>
           <div class="row-tools">
-            <button class="icon-btn note-btn${it.note ? ' has-note' : ''}" data-action="toggle-note" aria-expanded="${open}" aria-label="${it.note ? 'הצג/ערוך הערה' : 'הוסף הערה'}" title="הערה (Enter)" tabindex="-1">${icon.note}</button>
-            <button class="icon-btn flag-btn${it.flag ? ' on' : ''}" data-action="flag" aria-pressed="${it.flag}" aria-label="לחזור לפני המבחן" title="לחזור לפני המבחן (F)" tabindex="-1">${icon.star}</button>
-            <button class="due-btn ${dueCls}" data-action="edit-due" title="${it.due ? u.relDays(it.due) : 'קביעת תאריך יעד'}" aria-label="${it.due ? 'תאריך יעד ' + u.fmtDateFull(it.due) : 'קביעת תאריך יעד'}" tabindex="-1">${it.due ? u.fmtDate(it.due) : icon.calendar}</button>
-            <button class="pill st-${it.status}" data-action="status-menu" aria-label="סטטוס: ${M.STATUSES[it.status].label}. לשינוי" tabindex="-1">${M.STATUSES[it.status].label}</button>
-            <button class="icon-btn" data-action="row-menu" aria-label="פעולות נוספות" tabindex="-1">${icon.more}</button>
+            <button class="icon-btn opt note-btn${it.note ? ' has-note on' : ''}" data-action="toggle-note" aria-expanded="${open}" aria-label="${t(it.note ? 'cw.noteEdit' : 'cw.noteAdd')}" title="${t('cw.noteTitle')}" tabindex="-1">${icon.note}</button>
+            <button class="icon-btn opt flag-btn${it.flag ? ' on' : ''}" data-action="flag" aria-pressed="${it.flag}" aria-label="${t('cw.flag')}" title="${t('cw.flagTitle')}" tabindex="-1">${icon.star}</button>
+            ${it.due ? '' : `<button class="icon-btn opt due-btn" data-action="edit-due" aria-label="${t('cw.dueSet')}" title="${t('cw.dueSet')}" tabindex="-1">${icon.calendar}</button>`}
+            ${showStatus ? '' : `<button class="icon-btn opt st-btn" data-action="status-menu" aria-label="${t('cw.statusLabel', { status: ui.statusLabel(it.status) })}" title="${t('cw.statusTitle')}" tabindex="-1"><span class="st-dot st-${it.status}"></span></button>`}
+            <button class="icon-btn" data-action="row-menu" aria-label="${t('cw.rowMenu', { title: it.title })}" aria-haspopup="menu" tabindex="-1">${icon.more}</button>
           </div>
         </div>
         ${open ? `<div class="note-area">
-          <textarea class="note-input" dir="auto" rows="2" data-id="${it.id}" placeholder="כתוב הערה... נשמר אוטומטית. נוסחאות: $x^2$ או $$\\int f\\,dx$$" aria-label="הערה ל${esc(it.title)}">${esc(it.note)}</textarea>
+          <textarea class="note-input" dir="auto" rows="2" data-id="${it.id}" placeholder="${t('cw.notePh')}" aria-label="${t('cw.noteFor', { title: it.title })}">${esc(it.note)}</textarea>
           <div class="note-preview"${/\$/.test(it.note) ? '' : ' hidden'}>${u.rich(it.note)}</div>
         </div>` : ''}
         ${it.note ? `<div class="note-print" dir="auto">${u.rich(it.note)}</div>` : ''}
@@ -188,19 +237,49 @@
     r.focus({ preventScroll: true });
   }
 
+  /** Selected tab goes into the address (replace, no new history entry), so reload and links keep it. */
+  function setTab(root, c, tab, focus) {
+    view.tab = tab;
+    const h = `#/course/${c.id}${tab === 'items' ? '' : `?tab=${tab}`}`;
+    if (location.hash !== h) {
+      history.replaceState(null, '', h);
+      if (CT.app) { CT.app.lastRoute = h; CT.app.lastPath = h.split('?')[0]; }
+    }
+    V.render(root, { id: c.id, tab });
+    if (focus) { const b = root.querySelector(`[data-tab="${tab}"]`); if (b) b.focus(); }
+  }
+
   /* ================= events ================= */
   function bindHead(root, c) {
-    root.querySelector('.course-head').addEventListener('click', (e) => {
+    root.querySelector('.cw-head').addEventListener('click', (e) => {
       const a = e.target.closest('[data-action]');
       if (!a) return;
-      if (a.dataset.action === 'edit-course') V.courseForm(c);
-      if (a.dataset.action === 'finish') V.finishDialog(c);
       if (a.dataset.action === 'course-menu') courseMenu(a, c);
+      if (a.dataset.action === 'switch') switchMenu(a, c);
+      if (a.dataset.action === 'bulk-add') V.bulkAdd(c);
     });
-    const tabs = root.querySelector('.tabs');
-    if (tabs) tabs.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-tab]');
-      if (t) { view.tab = t.dataset.tab; V.render(root, { id: c.id }); }
+    const bar = root.querySelector('.cw-bar');
+    bar.addEventListener('click', (e) => {
+      const tb = e.target.closest('[data-tab]');
+      if (tb) { setTab(root, c, tb.dataset.tab, true); return; }
+      const f = e.target.closest('[data-action="filter"]');
+      if (f) { view.filter = f.dataset.filter; CT.app.rerender(); const b = document.querySelector(`.cw-f[data-filter="${view.filter}"]`); if (b) b.focus(); }
+    });
+    bar.addEventListener('change', (e) => {
+      if (e.target.matches('[data-action="tag-filter"]')) { view.tag = e.target.value; CT.app.rerender(); }
+    });
+    // tabs: arrow keys move between them (WAI-ARIA tabs pattern)
+    bar.addEventListener('keydown', (e) => {
+      const tb = e.target.closest('[role=tab]');
+      if (!tb) return;
+      const all = [...bar.querySelectorAll('[role=tab]')];
+      const i = all.indexOf(tb);
+      const rtl = getComputedStyle(bar).direction === 'rtl';
+      const step = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1, Home: -i, End: all.length - 1 - i }[e.key];
+      if (step === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setTab(root, c, all[(i + step + all.length) % all.length].dataset.tab, true);
     });
   }
 
@@ -223,19 +302,22 @@
         case 'moodle-changed': case 'moodle-gone': case 'moodle-merge': CT.views.moodle.rowAction(a.dataset.action, id, a); break;
         case 'edit-title': if (e.detail === 1) setTimeout(() => editTitleInline(a, id), 0); break;
         case 'cat-menu': catMenu(a, c, catId); break;
-        case 'filter': view.filter = a.dataset.filter; CT.app.rerender(); break;
-        case 'bulk-add': V.bulkAdd(c); break;
+        case 'toggle-done': {
+          if (view.showDone.has(catId)) view.showDone.delete(catId); else view.showDone.add(catId);
+          CT.app.rerender();
+          const b = document.querySelector(`.cat[data-id="${catId}"] .done-toggle`);
+          if (b) b.focus();
+          break;
+        }
         case 'add-cat': addCategory(c); break;
         case 'template': V.templateDialog(c); break;
+        case 'tab-grades': setTab(panel.closest('.cw').parentElement, c, 'grades', true); break;
         default: break;
       }
     });
     panel.addEventListener('dblclick', (e) => {
       const h = e.target.closest('[data-action="rename-cat"]');
       if (h) renameCat(h.closest('.cat').dataset.id);
-    });
-    panel.addEventListener('change', (e) => {
-      if (e.target.matches('[data-action="tag-filter"]')) { view.tag = e.target.value; CT.app.rerender(); }
     });
     panel.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -244,7 +326,8 @@
       const title = inp.value.trim();
       if (!title) return;
       const catId = form.dataset.cat;
-      S.commit('הוספת פריט', () => { S.findCat(catId).cat.items.push(M.newItem(title)); });
+      delete view.drafts[catId];
+      S.commit(tx('cw.u.addItem'), () => { S.findCat(catId).cat.items.push(M.newItem(title)); });
       const again = document.querySelector(`.quick-add[data-cat="${catId}"] input`);
       if (again) again.focus();
     });
@@ -252,12 +335,14 @@
       const r = e.target.closest('.row');
       if (r) view.focusId = r.dataset.id;
     });
-    // notes: autosave while typing (silent → no re-render, so the cursor stays)
     panel.addEventListener('input', (e) => {
+      // quick-add text survives re-renders (another item checked, a sync) until it is added
+      if (e.target.matches('.quick-add input')) { view.drafts[e.target.closest('.quick-add').dataset.cat] = e.target.value; return; }
+      // notes: autosave while typing (silent → no re-render, so the cursor stays)
       if (!e.target.matches('.note-input')) return;
       const ta = e.target, id = ta.dataset.id;
       autosize(ta);
-      S.commit('עריכת הערה', () => { const f = S.findItem(id); if (f) f.item.note = ta.value; }, { silent: true, coalesce: 'note:' + id });
+      S.commit(tx('cw.u.note'), () => { const f = S.findItem(id); if (f) f.item.note = ta.value; }, { silent: true, coalesce: 'note:' + id });
       const row = ta.closest('.row');
       row.querySelector('.note-btn').classList.toggle('has-note', !!ta.value.trim());
       updatePreview(ta);
@@ -275,16 +360,16 @@
     });
     panel.querySelectorAll('.note-input').forEach(autosize);
 
-    // drag & drop (rows inside a category, and categories themselves)
+    // drag & drop: rows inside a category (open and completed groups separately), and the categories themselves
     if (!filtering()) {
       panel.querySelectorAll('.rows').forEach((rowsEl) => ui.sortable(rowsEl, {
         item: '.row', handle: '.drag-handle',
-        onEnd: (ids) => S.commit('סידור פריטים', () => ui.reorder(S.findCat(rowsEl.dataset.cat).cat.items, ids)),
+        onEnd: (ids) => S.commit(tx('cw.u.order'), () => ui.reorderSome(S.findCat(rowsEl.dataset.cat).cat.items, ids)),
       }));
       const catsEl = panel.querySelector('.cats');
       ui.sortable(catsEl, {
         item: '.cat', handle: '.cat-head > .drag-handle',
-        onEnd: (ids) => S.commit('סידור קטגוריות', () => ui.reorder(S.course(c.id).categories, ids)),
+        onEnd: (ids) => S.commit(tx('cw.u.catOrder'), () => ui.reorder(S.course(c.id).categories, ids)),
       });
     }
   }
@@ -311,7 +396,7 @@
   V.toggleNote = toggleNote;
 
   function toggleFlag(id) {
-    S.commit('סימון לחזרה', () => { const f = S.findItem(id); f.item.flag = !f.item.flag; });
+    S.commit(tx('cw.u.flag'), () => { const f = S.findItem(id); f.item.flag = !f.item.flag; });
   }
   V.toggleFlag = toggleFlag;
 
@@ -322,7 +407,7 @@
     inp.className = 'title-input';
     inp.dir = 'auto';
     inp.value = f.item.title;
-    inp.setAttribute('aria-label', 'שם הפריט');
+    inp.setAttribute('aria-label', tx('cw.itemName'));
     span.replaceWith(inp);
     inp.focus();
     inp.select();
@@ -332,7 +417,7 @@
       done = true;
       const v = inp.value.trim();
       view.focusId = id;
-      if (save && v && v !== f.item.title) S.commit('שינוי שם פריט', () => { S.findItem(id).item.title = v; });
+      if (save && v && v !== f.item.title) S.commit(tx('cw.u.rename'), () => { S.findItem(id).item.title = v; });
       else CT.app.rerender();
     };
     inp.addEventListener('keydown', (e) => {
@@ -346,44 +431,47 @@
   function editDue(id) {
     const f = S.findItem(id);
     ui.modal({
-      title: `תאריך יעד — ${f.item.title}`,
-      body: `<label class="field"><span>תאריך</span><input type="date" value="${esc(f.item.due)}"></label>`,
+      title: tx('cw.dueTitle', { title: f.item.title }),
+      localized: true,
+      body: `<label class="field"><span>${t('cw.date')}</span><input type="date" value="${esc(f.item.due)}"></label>`,
       actions: [
-        f.item.due && { label: 'הסר תאריך', fn: () => S.commit('הסרת תאריך יעד', () => { S.findItem(id).item.due = ''; }) },
-        { label: 'ביטול' },
-        { label: 'שמור', primary: true, fn: (m) => { const v = m.body.querySelector('input').value; S.commit('תאריך יעד', () => { S.findItem(id).item.due = v; }); } },
+        f.item.due && { label: tx('cw.dueRemove'), fn: () => S.commit(tx('cw.u.dueRemove'), () => { S.findItem(id).item.due = ''; }) },
+        { label: tx('common.cancel') },
+        { label: tx('common.save'), primary: true, fn: (m) => { const v = m.body.querySelector('input').value; S.commit(tx('cw.u.due'), () => { S.findItem(id).item.due = v; }); } },
       ].filter(Boolean),
     });
   }
+  V.editDue = editDue;
 
   V.itemDetails = (id) => {
     const f = S.findItem(id);
     if (!f) return;
     const it = f.item;
     ui.modal({
-      title: 'פרטי פריט',
+      title: tx('cw.details'),
+      localized: true,
       wide: true,
       body: `
         <div class="form-grid">
-          <label class="field span-2"><span>כותרת</span><input name="title" dir="auto" value="${esc(it.title)}"></label>
-          <label class="field"><span>סטטוס</span><select name="status">${M.STATUS_ORDER.map((s) => `<option value="${s}" ${s === it.status ? 'selected' : ''}>${M.STATUSES[s].label}</option>`).join('')}</select></label>
-          <label class="field"><span>תאריך יעד</span><input type="date" name="due" value="${esc(it.due)}"></label>
-          <label class="field span-2"><span>קישור</span><input name="link" dir="ltr" placeholder="https://..." value="${esc(it.link)}"></label>
-          <label class="field span-2"><span>תגיות (מופרדות בפסיק)</span><input name="tags" dir="auto" placeholder="קשה, הגשה, לשאול מתרגל" value="${esc(it.tags.join(', '))}"></label>
-          <label class="check-field span-2"><input type="checkbox" name="flag" ${it.flag ? 'checked' : ''}> ⭐ לחזור לפני המבחן</label>
-          ${CT.game ? `<label class="field"><span>קושי (לנקודות)</span><select name="diff">
-            <option value="">אוטומטי (${CT.game.DIFF_LABELS[CT.game.difficulty({ title: it.title }, f.cat)]})</option>
-            ${[1, 2, 3].map((d) => `<option value="${d}" ${Number(it.diff) === d ? 'selected' : ''}>${CT.game.DIFF_LABELS[d]}</option>`).join('')}
+          <label class="field span-2"><span>${t('cw.d.title')}</span><input name="title" dir="auto" value="${esc(it.title)}"></label>
+          <label class="field"><span>${t('cw.d.status')}</span><select name="status">${M.STATUS_ORDER.map((s) => `<option value="${s}" ${s === it.status ? 'selected' : ''}>${esc(ui.statusLabel(s))}</option>`).join('')}</select></label>
+          <label class="field"><span>${t('cw.d.due')}</span><input type="date" name="due" value="${esc(it.due)}"></label>
+          <label class="field span-2"><span>${t('cw.d.link')}</span><input name="link" dir="ltr" placeholder="https://..." value="${esc(it.link)}"></label>
+          <label class="field span-2"><span>${t('cw.d.tags')}</span><input name="tags" dir="auto" placeholder="${t('cw.d.tagsPh')}" value="${esc(it.tags.join(', '))}"></label>
+          <label class="check-field span-2"><input type="checkbox" name="flag" ${it.flag ? 'checked' : ''}> ${t('cw.flag')}</label>
+          ${CT.game ? `<label class="field"><span>${t('cw.d.diff')}</span><select name="diff">
+            <option value="">${t('cw.d.diffAuto', { level: tx('cw.diff.' + CT.game.difficulty({ title: it.title }, f.cat)) })}</option>
+            ${[1, 2, 3].map((d) => `<option value="${d}" ${Number(it.diff) === d ? 'selected' : ''}>${t('cw.diff.' + d)}</option>`).join('')}
           </select></label>` : ''}
-          <label class="field span-2"><span>הערה (תומך ב-LaTeX: $...$)</span><textarea name="note" dir="auto" rows="6">${esc(it.note)}</textarea></label>
+          <label class="field span-2"><span>${t('cw.d.note')}</span><textarea name="note" dir="auto" rows="6">${esc(it.note)}</textarea></label>
         </div>
-        ${it.completedAt ? `<p class="muted">הושלם ב-${u.fmtDateFull(u.isoDate(new Date(it.completedAt)))}</p>` : ''}`,
+        ${it.completedAt ? `<p class="muted">${t('cw.d.completed', { date: ui.date(it.completedAt, 'full') })}</p>` : ''}`,
       actions: [
-        { label: 'ביטול' },
+        { label: tx('common.cancel') },
         {
-          label: 'שמור', primary: true, fn: (m) => {
+          label: tx('common.save'), primary: true, fn: (m) => {
             const g = (n) => m.body.querySelector(`[name="${n}"]`);
-            S.commit('עריכת פריט', () => {
+            S.commit(tx('cw.u.edit'), () => {
               const x = S.findItem(id).item;
               x.title = g('title').value.trim() || x.title;
               if (g('status').value !== x.status) {
@@ -394,7 +482,7 @@
               }
               x.due = g('due').value;
               x.link = g('link').value.trim();
-              x.tags = g('tags').value.split(/[,،]/).map((t) => t.trim()).filter(Boolean);
+              x.tags = g('tags').value.split(/[,،]/).map((s) => s.trim()).filter(Boolean);
               x.flag = g('flag').checked;
               x.note = g('note').value;
               if (g('diff')) { if (g('diff').value) x.diff = Number(g('diff').value); else delete x.diff; }
@@ -408,11 +496,11 @@
   V.deleteItem = (id) => {
     const f = S.findItem(id);
     if (!f) return;
-    S.commit('מחיקת פריט', () => { const x = S.findItem(id); x.cat.items.splice(x.cat.items.indexOf(x.item), 1); });
-    ui.toast(`"${f.item.title}" נמחק`, { action: { label: 'בטל', fn: S.undo } });
+    S.commit(tx('cw.u.delete'), () => { const x = S.findItem(id); x.cat.items.splice(x.cat.items.indexOf(x.item), 1); });
+    ui.toast(tx('cw.deleted', { title: f.item.title }), { action: { label: tx('common.undo'), fn: S.undo } });
   };
 
-  V.moveItem = (id, dir) => S.commit('הזזת פריט', () => {
+  V.moveItem = (id, dir) => S.commit(tx('cw.u.move'), () => {
     const { cat, item } = S.findItem(id);
     const i = cat.items.indexOf(item), j = i + dir;
     if (j < 0 || j >= cat.items.length) return;
@@ -423,33 +511,40 @@
   function rowMenu(anchor, id) {
     const f = S.findItem(id);
     const others = f.course.categories.filter((c) => c !== f.cat);
+    const row = anchor.closest('.row');
     ui.menu(anchor, [
-      { label: 'פרטים ועריכה', icon: 'edit', hint: 'E', fn: () => V.itemDetails(id) },
-      CT.focus && f.item.status !== 'done' && { label: 'רק 5 דקות', icon: 'timer', fn: () => CT.focus.start(id, 5) },
-      CT.focus && f.item.status !== 'done' && { label: 'מצב מיקוד (פומודורו)', icon: 'timer', fn: () => CT.focus.start(id, S.state.settings.pomodoro.work || 25) },
-      CT.focus && { label: 'תתי-משימות', icon: 'check', fn: () => CT.focus.openSubs(id) },
-      { label: 'הזז למעלה', icon: 'up', hint: 'Alt+↑', fn: () => V.moveItem(id, -1) },
-      { label: 'הזז למטה', icon: 'down', hint: 'Alt+↓', fn: () => V.moveItem(id, 1) },
-      others.length && { label: 'העבר לקטגוריה…', icon: 'archive', fn: () => moveToCat(id) },
-      { label: 'שכפל', icon: 'plus', fn: () => S.commit('שכפול פריט', () => {
+      { label: tx('cw.m.details'), icon: 'edit', hint: 'E', fn: () => V.itemDetails(id) },
+      { label: tx('cw.m.status'), icon: 'check', hint: 'S', fn: () => ui.statusMenu(row ? row.querySelector('[data-action="status-menu"]') || anchor : anchor, id) },
+      { label: tx(f.item.due ? 'cw.m.dueChange' : 'cw.dueSet'), icon: 'calendar', fn: () => editDue(id) },
+      { label: tx(f.item.note ? 'cw.noteEdit' : 'cw.noteAdd'), icon: 'note', hint: 'Enter', fn: () => toggleNote(id) },
+      { label: tx(f.item.flag ? 'cw.m.unflag' : 'cw.flag'), icon: 'star', hint: 'F', fn: () => toggleFlag(id) },
+      '-',
+      CT.focus && f.item.status !== 'done' && { label: tx('td.five'), icon: 'timer', fn: () => CT.focus.start(id, 5) },
+      CT.focus && f.item.status !== 'done' && { label: tx('cw.m.focus'), icon: 'timer', fn: () => CT.focus.start(id, S.state.settings.pomodoro.work || 25) },
+      CT.focus && { label: tx('cw.m.subs'), icon: 'check', fn: () => CT.focus.openSubs(id) },
+      { label: tx('cw.m.up'), icon: 'up', hint: 'Alt+↑', fn: () => V.moveItem(id, -1) },
+      { label: tx('cw.m.down'), icon: 'down', hint: 'Alt+↓', fn: () => V.moveItem(id, 1) },
+      others.length && { label: tx('cw.m.moveTo'), icon: 'archive', fn: () => moveToCat(id) },
+      { label: tx('cw.m.duplicate'), icon: 'plus', fn: () => S.commit(tx('cw.u.duplicate'), () => {
         const x = S.findItem(id);
-        x.cat.items.splice(x.cat.items.indexOf(x.item) + 1, 0, M.newItem(x.item.title + ' (עותק)', { tags: [...x.item.tags], note: x.item.note }));
+        x.cat.items.splice(x.cat.items.indexOf(x.item) + 1, 0, M.newItem(tx('cw.copyOf', { title: x.item.title }), { tags: [...x.item.tags], note: x.item.note }));
       }) },
       '-',
-      { label: 'מחק פריט', icon: 'trash', danger: true, hint: 'Del', fn: () => V.deleteItem(id) },
-    ]);
+      { label: tx('cw.m.delete'), icon: 'trash', danger: true, hint: 'Del', fn: () => V.deleteItem(id) },
+    ], { localized: true });
   }
 
   function moveToCat(id) {
     const f = S.findItem(id);
     const opts = f.course.categories.filter((c) => c !== f.cat);
     ui.modal({
-      title: 'העברה לקטגוריה',
-      body: `<label class="field"><span>קטגוריית יעד</span><select>${opts.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>`,
-      actions: [{ label: 'ביטול' }, {
-        label: 'העבר', primary: true, fn: (m) => {
+      title: tx('cw.moveTitle'),
+      localized: true,
+      body: `<label class="field"><span>${t('cw.moveTarget')}</span><select>${opts.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>`,
+      actions: [{ label: tx('common.cancel') }, {
+        label: tx('cw.moveOk'), primary: true, fn: (m) => {
           const to = m.body.querySelector('select').value;
-          S.commit('העברת פריט', () => {
+          S.commit(tx('cw.u.moveTo'), () => {
             const x = S.findItem(id);
             x.cat.items.splice(x.cat.items.indexOf(x.item), 1);
             S.findCat(to).cat.items.push(x.item);
@@ -461,67 +556,68 @@
 
   /* ================= categories ================= */
   async function addCategory(c) {
-    const name = await ui.prompt('קטגוריה חדשה', '', 'שם הקטגוריה (למשל: מבחנים ובחנים, חומר נוסף)');
-    if (name) S.commit('הוספת קטגוריה', () => S.course(c.id).categories.push(M.newCategory(name)));
+    const name = await ui.prompt(tx('cw.newCat'), '', tx('cw.newCatLabel'), { localized: true });
+    if (name) S.commit(tx('cw.u.addCat'), () => S.course(c.id).categories.push(M.newCategory(name)));
   }
   async function renameCat(catId) {
     const { cat } = S.findCat(catId);
-    const name = await ui.prompt('שינוי שם קטגוריה', cat.name);
-    if (name && name !== cat.name) S.commit('שינוי שם קטגוריה', () => { S.findCat(catId).cat.name = name; });
+    const name = await ui.prompt(tx('cw.renameCat'), cat.name, '', { localized: true });
+    if (name && name !== cat.name) S.commit(tx('cw.u.renameCat'), () => { S.findCat(catId).cat.name = name; });
   }
   function catMenu(anchor, c, catId) {
     const { cat } = S.findCat(catId);
     const idx = c.categories.indexOf(cat);
-    const moveCat = (d) => S.commit('הזזת קטגוריה', () => {
+    const moveCat = (d) => S.commit(tx('cw.u.catOrder'), () => {
       const cats = S.course(c.id).categories, i = cats.findIndex((x) => x.id === catId);
       if (i + d < 0 || i + d >= cats.length) return;
       cats.splice(i + d, 0, cats.splice(i, 1)[0]);
     });
     ui.menu(anchor, [
-      { label: 'שינוי שם', icon: 'edit', fn: () => renameCat(catId) },
-      { label: 'הוסף פריטים בבת אחת', icon: 'plus', fn: () => V.bulkAdd(c, catId) },
-      { label: 'סמן הכול כהושלם', icon: 'check', fn: () => S.commit('סימון כל הקטגוריה', () => {
+      { label: tx('cw.c.rename'), icon: 'edit', fn: () => renameCat(catId) },
+      { label: tx('cw.c.bulk'), icon: 'plus', fn: () => V.bulkAdd(c, catId) },
+      { label: tx('cw.c.allDone'), icon: 'check', fn: () => S.commit(tx('cw.u.allDone'), () => {
         S.findCat(catId).cat.items.forEach((i) => { if (i.status !== 'done') { i.status = 'done'; i.completedAt = new Date().toISOString(); } });
       }) },
-      idx > 0 && { label: 'הזז למעלה', icon: 'up', fn: () => moveCat(-1) },
-      idx < c.categories.length - 1 && { label: 'הזז למטה', icon: 'down', fn: () => moveCat(1) },
+      idx > 0 && { label: tx('cw.m.up'), icon: 'up', fn: () => moveCat(-1) },
+      idx < c.categories.length - 1 && { label: tx('cw.m.down'), icon: 'down', fn: () => moveCat(1) },
       '-',
-      { label: 'מחק קטגוריה', icon: 'trash', danger: true, fn: async () => {
-        if (cat.items.length && !(await ui.confirm(`למחוק את "${cat.name}" ואת ${cat.items.length} הפריטים שבה?`, 'מחק', true))) return;
-        S.commit('מחיקת קטגוריה', () => { const cs = S.course(c.id).categories; cs.splice(cs.findIndex((x) => x.id === catId), 1); });
-        ui.toast('הקטגוריה נמחקה', { action: { label: 'בטל', fn: S.undo } });
+      { label: tx('cw.c.delete'), icon: 'trash', danger: true, fn: async () => {
+        if (cat.items.length && !(await ui.confirm(tx('cw.c.deleteConfirm', { name: cat.name, n: cat.items.length }), tx('cp.deleteOk'), true, { localized: true }))) return;
+        S.commit(tx('cw.u.deleteCat'), () => { const cs = S.course(c.id).categories; cs.splice(cs.findIndex((x) => x.id === catId), 1); });
+        ui.toast(tx('cw.c.deleted'), { action: { label: tx('common.undo'), fn: S.undo } });
       } },
-    ]);
+    ], { localized: true });
   }
 
   /* ================= bulk add & template ================= */
   V.bulkAdd = (c, presetCatId) => {
     const catOpts = c.categories.map((cat) => `<option value="${cat.id}" ${cat.id === presetCatId ? 'selected' : ''}>${esc(cat.name)}</option>`).join('');
     const m = ui.modal({
-      title: 'הוספת פריטים בבת אחת',
+      title: tx('cw.b.title'),
+      localized: true,
       body: `
         <div class="form-grid">
-          <label class="field span-2"><span>קטגוריה</span>
-            <select name="cat">${catOpts}<option value="__new">➕ קטגוריה חדשה…</option></select></label>
-          <label class="field span-2" data-newcat hidden><span>שם הקטגוריה החדשה</span><input name="newcat" dir="auto" placeholder="למשל: תרגולים"></label>
-          <label class="field"><span>כמות</span><input type="number" name="count" min="1" max="200" value="13"></label>
-          <label class="field"><span>להתחיל מהמספר</span><input type="number" name="start" min="0" value="1"></label>
-          <label class="field span-2"><span>תבנית שם ({n} = מספר)</span><input name="pattern" dir="auto" value="תרגול {n}"></label>
-          <label class="field"><span>תאריך יעד לראשון (רשות)</span><input type="date" name="due"></label>
-          <label class="field"><span>כל כמה ימים</span><input type="number" name="every" min="1" value="7"></label>
+          <label class="field span-2"><span>${t('cw.b.cat')}</span>
+            <select name="cat">${catOpts}<option value="__new">${t('cw.b.newCatOpt')}</option></select></label>
+          <label class="field span-2" data-newcat hidden><span>${t('cw.b.newCat')}</span><input name="newcat" dir="auto" placeholder="${t('cw.b.newCatPh')}"></label>
+          <label class="field"><span>${t('cw.b.count')}</span><input type="number" name="count" min="1" max="200" value="13"></label>
+          <label class="field"><span>${t('cw.b.start')}</span><input type="number" name="start" min="0" value="1"></label>
+          <label class="field span-2"><span>${t('cw.b.pattern', { n: '{n}' })}</span><input name="pattern" dir="auto" value="${t('cw.b.patternDefault', { n: '{n}' })}"></label>
+          <label class="field"><span>${t('cw.b.due')}</span><input type="date" name="due"></label>
+          <label class="field"><span>${t('cw.b.every')}</span><input type="number" name="every" min="1" value="7"></label>
         </div>
         <p class="muted preview-line" aria-live="polite"></p>`,
-      actions: [{ label: 'ביטול' }, {
-        label: 'צור', primary: true, fn: (api) => {
+      actions: [{ label: tx('common.cancel') }, {
+        label: tx('cw.b.create'), primary: true, fn: (api) => {
           const g = (n) => api.body.querySelector(`[name="${n}"]`);
           const count = Math.min(200, Math.max(1, parseInt(g('count').value, 10) || 0));
           const start = parseInt(g('start').value, 10) || 1;
-          const pattern = g('pattern').value.trim() || 'פריט {n}';
+          const pattern = g('pattern').value.trim() || tx('cw.b.patternFallback', { n: '{n}' });
           const due = g('due').value, every = parseInt(g('every').value, 10) || 7;
-          let catId = g('cat').value;
+          const catId = g('cat').value;
           const newName = g('newcat').value.trim();
           if (catId === '__new' && !newName) { g('newcat').focus(); return false; }
-          S.commit(`הוספת ${count} פריטים`, () => {
+          S.commit(tx('cw.u.bulk', { n: count }), () => {
             const course = S.course(c.id);
             let cat;
             if (catId === '__new') { cat = M.newCategory(newName); course.categories.push(cat); } else cat = course.categories.find((x) => x.id === catId);
@@ -529,7 +625,7 @@
             if (due) items.forEach((it, i) => { it.due = u.addDays(due, i * every); });
             cat.items.push(...items);
           });
-          ui.toast(`נוצרו ${count} פריטים`, { action: { label: 'בטל', fn: S.undo } });
+          ui.toast(tx('cw.b.done', { n: count }), { action: { label: tx('common.undo'), fn: S.undo } });
           return true;
         },
       }],
@@ -541,8 +637,8 @@
       const cat = c.categories.find((x) => x.id === g('cat').value);
       const count = Math.max(1, parseInt(g('count').value, 10) || 1);
       const start = parseInt(g('start').value, 10) || 1;
-      const names = M.makeItems(g('pattern').value || 'פריט {n}', Math.min(count, 3), start).map((x) => x.title);
-      m.body.querySelector('.preview-line').textContent = `ייווצרו ${count} פריטים: ${names.join(', ')}${count > 3 ? ', …' : ''}${cat ? ` (ב"${cat.name}")` : ''}`;
+      const names = M.makeItems(g('pattern').value || tx('cw.b.patternFallback', { n: '{n}' }), Math.min(count, 3), start).map((x) => x.title);
+      m.body.querySelector('.preview-line').textContent = tx(cat ? 'cw.b.previewIn' : 'cw.b.preview', { n: count, names: names.join(', ') + (count > 3 ? ', …' : ''), cat: cat ? cat.name : '' });
     };
     const syncStart = () => {
       const cat = c.categories.find((x) => x.id === g('cat').value);
@@ -560,27 +656,28 @@
 
   V.templateDialog = (c) => {
     const tpl = CT.store.state.settings.template;
-    const rowT = (t) => `<div class="tpl-row">
-        <input name="name" dir="auto" value="${esc(t.name)}" aria-label="שם קטגוריה">
-        <input name="count" type="number" min="0" value="${esc(t.count)}" aria-label="כמות">
-        <input name="pattern" dir="auto" value="${esc(t.pattern)}" aria-label="תבנית שם">
-        <button class="icon-btn" data-del aria-label="הסר שורה">${icon.trash}</button></div>`;
+    const rowT = (x) => `<div class="tpl-row">
+        <input name="name" dir="auto" value="${esc(x.name)}" aria-label="${t('cw.t.cat')}">
+        <input name="count" type="number" min="0" value="${esc(x.count)}" aria-label="${t('cw.b.count')}">
+        <input name="pattern" dir="auto" value="${esc(x.pattern)}" aria-label="${t('cw.t.pattern')}">
+        <button class="icon-btn" data-del aria-label="${t('cw.t.remove')}">${icon.trash}</button></div>`;
     const m = ui.modal({
-      title: 'החלת מבנה סטנדרטי',
+      title: tx('cw.t.title'),
+      localized: true,
       wide: true,
-      body: `<p class="muted">כל שורה יוצרת קטגוריה עם פריטים ממוספרים. אם הקטגוריה כבר קיימת — הפריטים יתווספו אליה.</p>
-        <div class="tpl-head muted"><span>קטגוריה</span><span>כמות</span><span>תבנית שם</span><span></span></div>
+      body: `<p class="muted">${t('cw.t.hint', { n: '{n}' })}</p>
+        <div class="tpl-head muted"><span>${t('cw.t.cat')}</span><span>${t('cw.b.count')}</span><span>${t('cw.t.pattern')}</span><span></span></div>
         <div class="tpl-rows">${tpl.map(rowT).join('')}</div>
-        <button class="btn btn-ghost" data-add>${icon.plus} שורה</button>
-        <label class="check-field"><input type="checkbox" name="save"> שמור כתבנית ברירת המחדל לקורסים הבאים</label>`,
-      actions: [{ label: 'ביטול' }, {
-        label: 'החל על הקורס', primary: true, fn: (api) => {
+        <button class="btn btn-ghost" data-add>${icon.plus} ${t('cw.t.row')}</button>
+        <label class="check-field"><input type="checkbox" name="save"> ${t('cw.t.save')}</label>`,
+      actions: [{ label: tx('common.cancel') }, {
+        label: tx('cw.t.apply'), primary: true, fn: (api) => {
           const rows = [...api.body.querySelectorAll('.tpl-row')].map((r) => ({
             name: r.querySelector('[name=name]').value.trim(),
             count: parseInt(r.querySelector('[name=count]').value, 10) || 0,
             pattern: r.querySelector('[name=pattern]').value.trim(),
           })).filter((r) => r.name);
-          S.commit('החלת תבנית', (st) => {
+          S.commit(tx('cw.u.template'), (st) => {
             M.applyTemplate(S.course(c.id), rows);
             if (api.body.querySelector('[name=save]').checked) st.settings.template = rows;
           });
@@ -594,33 +691,35 @@
   };
 
   /* ================= course create / edit ================= */
-  V.courseForm = (existing) => {
+  /** `preset.semesterId`: the semester a new course goes into (the courses page passes the one on screen). */
+  V.courseForm = (existing, preset = {}) => {
     const st = S.state;
-    const c = existing || M.newCourse({ semesterId: st.settings.activeSemesterId, color: M.COLORS[st.courses.length % M.COLORS.length] });
+    const c = existing || M.newCourse({ semesterId: preset.semesterId != null && preset.semesterId !== '' ? preset.semesterId : st.settings.activeSemesterId, color: M.COLORS[st.courses.length % M.COLORS.length] });
     const isNew = !existing;
-    const linkRow = (l = {}) => `<div class="list-row"><input name="lbl" dir="auto" placeholder="שם (Moodle, Piazza…)" value="${esc(l.label)}" aria-label="שם הקישור"><input name="url" dir="ltr" placeholder="https://" value="${esc(l.url)}" aria-label="כתובת"><button class="icon-btn" data-del aria-label="הסר">${icon.trash}</button></div>`;
-    const examRow = (x = {}) => `<div class="list-row" data-id="${esc(x.id || '')}"><input name="lbl" dir="auto" placeholder="מועד א׳ / בוחן / הגשת פרויקט" value="${esc(x.label)}" aria-label="שם"><input name="date" type="date" value="${esc(x.date)}" aria-label="תאריך"><button class="icon-btn" data-del aria-label="הסר">${icon.trash}</button></div>`;
+    const linkRow = (l = {}) => `<div class="list-row"><input name="lbl" dir="auto" placeholder="${t('cw.f2.linkPh')}" value="${esc(l.label)}" aria-label="${t('cw.f2.linkName')}"><input name="url" dir="ltr" placeholder="https://" value="${esc(l.url)}" aria-label="${t('cw.f2.linkUrl')}"><button class="icon-btn" data-del aria-label="${t('cw.f2.remove')}">${icon.trash}</button></div>`;
+    const examRow = (x = {}) => `<div class="list-row" data-id="${esc(x.id || '')}"><input name="lbl" dir="auto" placeholder="${t('cw.f2.examPh')}" value="${esc(x.label)}" aria-label="${t('cw.f2.examName')}"><input name="date" type="date" value="${esc(x.date)}" aria-label="${t('cw.date')}"><button class="icon-btn" data-del aria-label="${t('cw.f2.remove')}">${icon.trash}</button></div>`;
     const m = ui.modal({
-      title: isNew ? 'קורס חדש' : 'עריכת קורס',
+      title: tx(isNew ? 'cw.f2.new' : 'cw.f2.edit'),
+      localized: true,
       wide: true,
       body: `
         <div class="form-grid">
-          <label class="field span-2"><span>שם הקורס</span><input name="name" dir="auto" value="${isNew ? '' : esc(c.name)}" placeholder="למשל: אותות ומערכות" required></label>
-          <label class="field"><span>מספר קורס</span><input name="number" dir="ltr" value="${esc(c.number)}" placeholder="00440131"></label>
-          <label class="field"><span>נקודות זכות</span><input name="credits" type="number" step="0.5" min="0" value="${esc(c.credits)}"></label>
-          <label class="field"><span>סמסטר</span><select name="semester">${st.semesters.map((s) => `<option value="${s.id}" ${s.id === c.semesterId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}<option value="">— ללא —</option></select></label>
-          <div class="field"><span>צבע</span><div class="swatches" role="radiogroup" aria-label="צבע הקורס">
-            ${M.COLORS.map((col) => `<button type="button" class="swatch${col === c.color ? ' on' : ''}" style="background:${col}" data-color="${col}" role="radio" aria-checked="${col === c.color}" aria-label="צבע ${col}"></button>`).join('')}
-            <input type="color" name="color" value="${esc(c.color)}" aria-label="צבע מותאם">
+          <label class="field span-2"><span>${t('cw.f2.name')}</span><input name="name" dir="auto" value="${isNew ? '' : esc(c.name)}" placeholder="${t('cw.f2.namePh')}" required></label>
+          <label class="field"><span>${t('cw.f2.number')}</span><input name="number" dir="ltr" value="${esc(c.number)}" placeholder="00440131"></label>
+          <label class="field"><span>${t('cw.f2.credits')}</span><input name="credits" type="number" step="0.5" min="0" value="${esc(c.credits)}"></label>
+          <label class="field"><span>${t('cw.f2.semester')}</span><select name="semester">${st.semesters.map((s) => `<option value="${s.id}" ${s.id === c.semesterId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}<option value="">${t('cw.f2.noSemester')}</option></select></label>
+          <div class="field"><span>${t('cp.color')}</span><div class="swatches" role="radiogroup" aria-label="${t('cp.color')}">
+            ${M.COLORS.map((col, i) => `<button type="button" class="swatch${col === c.color ? ' on' : ''}" style="background:${col}" data-color="${col}" role="radio" aria-checked="${col === c.color}" aria-label="${t('cp.colorN', { n: i + 1 })}"></button>`).join('')}
+            <input type="color" name="color" value="${esc(c.color)}" aria-label="${t('cp.colorCustom')}">
           </div></div>
-          <label class="field span-2"><span>מרצה / מתרגל</span><input name="staff" dir="auto" value="${esc(c.staff)}"></label>
-          <label class="field span-2"><span>תיאור קצר</span><textarea name="description" dir="auto" rows="2">${esc(c.description)}</textarea></label>
-          <div class="field span-2"><span>קישורים שימושיים</span><div class="list" data-list="links">${c.links.map(linkRow).join('')}</div><button type="button" class="btn btn-ghost" data-add="links">${icon.plus} קישור</button></div>
-          <div class="field span-2"><span>מבחנים, בחנים והגשות גדולות (לספירה לאחור)</span><div class="list" data-list="exams">${(c.exams || []).map(examRow).join('')}</div><button type="button" class="btn btn-ghost" data-add="exams">${icon.plus} מועד</button></div>
-          ${isNew ? `<label class="check-field span-2"><input type="checkbox" name="tpl" checked> צור מבנה סטנדרטי (${st.settings.template.map((t) => `${t.count} ${t.name}`).join(', ')})</label>` : ''}
+          <label class="field span-2"><span>${t('cw.f2.staff')}</span><input name="staff" dir="auto" value="${esc(c.staff)}"></label>
+          <label class="field span-2"><span>${t('cw.f2.desc')}</span><textarea name="description" dir="auto" rows="2">${esc(c.description)}</textarea></label>
+          <div class="field span-2"><span>${t('cw.f2.links')}</span><div class="list" data-list="links">${c.links.map(linkRow).join('')}</div><button type="button" class="btn btn-ghost" data-add="links">${icon.plus} ${t('cw.f2.link')}</button></div>
+          <div class="field span-2"><span>${t('cw.f2.exams')}</span><div class="list" data-list="exams">${(c.exams || []).map(examRow).join('')}</div><button type="button" class="btn btn-ghost" data-add="exams">${icon.plus} ${t('cw.f2.exam')}</button></div>
+          ${isNew ? `<label class="check-field span-2"><input type="checkbox" name="tpl" checked> <span>${t('cw.f2.tpl')} <span class="muted small" dir="auto">(${esc(st.settings.template.map((x) => `${x.count} ${x.name}`).join(', '))})</span></span></label>` : ''}
         </div>`,
-      actions: [{ label: 'ביטול' }, {
-        label: isNew ? 'צור קורס' : 'שמור', primary: true, fn: (api) => {
+      actions: [{ label: tx('common.cancel') }, {
+        label: tx(isNew ? 'cw.f2.create' : 'common.save'), primary: true, fn: (api) => {
           const g = (n) => api.body.querySelector(`[name="${n}"]`);
           const name = g('name').value.trim();
           if (!name) { g('name').focus(); return false; }
@@ -633,10 +732,10 @@
           if (isNew) {
             const nc = Object.assign(c, fields);
             if (g('tpl').checked) M.applyTemplate(nc, st.settings.template);
-            S.commit('קורס חדש', (s2) => s2.courses.push(nc));
+            S.commit(tx('cw.u.newCourse'), (s2) => s2.courses.push(nc));
             location.hash = `#/course/${nc.id}`;
           } else {
-            S.commit('עריכת קורס', () => Object.assign(S.course(c.id), fields));
+            S.commit(tx('cw.u.editCourse'), () => Object.assign(S.course(c.id), fields));
           }
           return true;
         },
@@ -662,48 +761,49 @@
     const suggested = u.isNum(calc.final) ? +calc.final.toFixed(2) : null;
     const rules = S.state.settings.gpa;
     const isNew = !M.isFinished(c);
-    const typeSel = Object.entries(M.OUTCOMES).map(([k, d]) => `<option value="${k}" ${(o.type || 'graded') === k ? 'selected' : ''}>${d.label}</option>`).join('');
+    const typeSel = Object.keys(M.OUTCOMES).map((k) => `<option value="${k}" ${(o.type || 'graded') === k ? 'selected' : ''}>${esc(ui.outcomeLabel(k))}</option>`).join('');
     const m = ui.modal({
-      title: isNew ? `סיום קורס — ${c.name}` : `עריכת סיום — ${c.name}`,
+      title: tx(isNew ? 'cw.fin.title' : 'cw.fin.editTitle', { name: c.name }),
+      localized: true,
       body: `<div class="form-grid">
-        <label class="field"><span>סוג הסיום</span><select name="type">${typeSel}</select></label>
-        <label class="field" data-show="grade"><span>ציון סופי (0–100)</span><input name="grade" type="number" min="0" max="100" step="any" inputmode="decimal" value="${u.isNum(o.grade) ? o.grade : (isNew && suggested != null ? suggested : '')}"></label>
-        <label class="field"><span>תאריך סיום</span><input name="date" type="date" value="${esc(o.date || u.today())}"></label>
-        <label class="field"><span>הערה</span><input name="note" dir="auto" value="${esc(o.note || '')}" placeholder="מועד ב׳, עם בונוס…"></label>
-        <label class="check-field span-2" data-show="exempt"><input type="checkbox" name="exemptCredits" ${(o.exemptCredits ?? rules.exemptCredits) ? 'checked' : ''}> הפטור מקנה נקודות זכות</label>
+        <label class="field"><span>${t('cw.fin.type')}</span><select name="type">${typeSel}</select></label>
+        <label class="field" data-show="grade"><span>${t('cw.fin.grade')}</span><input name="grade" type="number" min="0" max="100" step="any" inputmode="decimal" value="${u.isNum(o.grade) ? o.grade : (isNew && suggested != null ? suggested : '')}"></label>
+        <label class="field"><span>${t('cw.fin.date')}</span><input name="date" type="date" value="${esc(o.date || u.today())}"></label>
+        <label class="field"><span>${t('cw.fin.note')}</span><input name="note" dir="auto" value="${esc(o.note || '')}" placeholder="${t('cw.fin.notePh')}"></label>
+        <label class="check-field span-2" data-show="exempt"><input type="checkbox" name="exemptCredits" ${(o.exemptCredits ?? rules.exemptCredits) ? 'checked' : ''}> ${t('cw.fin.exempt')}</label>
       </div>
-      ${suggested != null ? `<p class="small finish-suggest" data-show="grade">לפי רכיבי הציון שהזנת בקורס: <b>${suggested}</b>
-        <button type="button" class="btn btn-small btn-ghost" data-fill>מלא</button><br><span class="muted">הציון הרשמי הוא מה שקובע — אפשר לדרוס ידנית.</span></p>`
-        : (calc.remaining && calc.remaining.length && c.grade.components.length ? `<p class="muted small">חסרים ציונים ב־${calc.remaining.length} רכיבים, לכן אין הצעה מהחישוב.</p>` : '')}
-      <p class="muted small">קורס שהסתיים יוצא מ"מה דחוף" ומהספירה לאחור, אבל נשאר זמין ואפשר לבטל את הסיום בכל רגע.</p>`,
+      ${suggested != null ? `<p class="small finish-suggest" data-show="grade">${t('cw.fin.suggest')} <b>${ui.num(suggested)}</b>
+        <button type="button" class="btn btn-small btn-ghost" data-fill>${t('cw.fin.fill')}</button><br><span class="muted">${t('cw.fin.official')}</span></p>`
+        : (calc.remaining && calc.remaining.length && c.grade.components.length ? `<p class="muted small">${t('cw.fin.missing', { n: calc.remaining.length })}</p>` : '')}
+      <p class="muted small">${t('cw.fin.note2')}</p>`,
       actions: [
-        ...(isNew ? [] : [{ label: 'ביטול הסיום', danger: true, fn: () => {
-          S.commit('ביטול סיום קורס', () => { S.course(c.id).outcome = null; });
-          ui.toast('הקורס חזר להיות פעיל', { action: { label: 'בטל', fn: S.undo } });
+        ...(isNew ? [] : [{ label: tx('cw.fin.undo'), danger: true, fn: () => {
+          S.commit(tx('cw.fin.undo'), () => { S.course(c.id).outcome = null; });
+          ui.toast(tx('cw.fin.undone'), { action: { label: tx('common.undo'), fn: S.undo } });
         } }]),
-        { label: 'סגור' },
-        { label: isNew ? 'סיים קורס' : 'שמור', primary: true, fn: (api) => {
+        { label: tx('common.close') },
+        { label: tx(isNew ? 'cw.fin.ok' : 'common.save'), primary: true, fn: (api) => {
           const g = (n) => api.body.querySelector(`[name=${n}]`);
           const type = g('type').value;
           const raw = g('grade').value.trim();
           const grade = raw === '' ? null : Number(raw);
-          if (type === 'graded' && !(grade >= 0 && grade <= 100)) { g('grade').focus(); ui.toast('צריך ציון בין 0 ל־100 (או לבחור סוג סיום אחר)', { error: true }); return false; }
+          if (type === 'graded' && !(grade >= 0 && grade <= 100)) { g('grade').focus(); ui.toast(tx('cw.fin.needGrade'), { error: true }); return false; }
           if (type === 'failed' && grade != null && !(grade >= 0 && grade <= 100)) { g('grade').focus(); return false; }
           const outcome = {
             type, grade: type === 'graded' || type === 'failed' ? grade : null,
             date: g('date').value, note: g('note').value.trim(), exemptCredits: g('exemptCredits').checked,
             fromCalc: suggested != null && grade === suggested,
           };
-          S.commit(isNew ? 'סיום קורס' : 'עריכת סיום', () => { S.course(c.id).outcome = outcome; });
-          ui.toast(isNew ? `"${c.name}" סומן כהושלם` : 'הסיום עודכן', { action: { label: 'בטל', fn: S.undo } });
+          S.commit(tx(isNew ? 'cw.fin.ok' : 'cw.u.finishEdit'), () => { S.course(c.id).outcome = outcome; });
+          ui.toast(isNew ? tx('cw.fin.doneToast', { name: c.name }) : tx('cw.fin.updated'), { action: { label: tx('common.undo'), fn: S.undo } });
           return true;
         } },
       ],
     });
     const sync = () => {
-      const t = m.body.querySelector('[name=type]').value;
-      m.body.querySelectorAll('[data-show=grade]').forEach((el) => { el.hidden = !(t === 'graded' || t === 'failed'); });
-      m.body.querySelectorAll('[data-show=exempt]').forEach((el) => { el.hidden = t !== 'exempt'; });
+      const ty = m.body.querySelector('[name=type]').value;
+      m.body.querySelectorAll('[data-show=grade]').forEach((el) => { el.hidden = !(ty === 'graded' || ty === 'failed'); });
+      m.body.querySelectorAll('[data-show=exempt]').forEach((el) => { el.hidden = ty !== 'exempt'; });
     };
     m.body.querySelector('[name=type]').addEventListener('change', sync);
     const fill = m.body.querySelector('[data-fill]');
@@ -712,28 +812,34 @@
   };
 
   function courseMenu(anchor, c) {
+    const P = CT.views.courses;
     ui.menu(anchor, [
-      { label: 'החלת מבנה סטנדרטי', icon: 'plus', fn: () => V.templateDialog(c) },
-      { label: 'רשימת חזרה למבחן', icon: 'star', fn: () => { location.hash = `#/review?course=${c.id}`; } },
-      { label: 'הדפסה / PDF', icon: 'print', fn: () => V.print(c) },
+      { label: tx('cp.edit'), icon: 'edit', fn: () => V.courseForm(c) },
+      { label: tx(M.isFinished(c) ? 'cw.m.finishEdit' : 'cw.m.finish'), icon: 'award', fn: () => V.finishDialog(c) },
+      P && { label: tx('cp.color'), icon: 'sliders', fn: () => P.colorDialog(c, anchor) },
+      { label: tx('cw.m.template'), icon: 'plus', fn: () => V.templateDialog(c) },
+      { label: tx('cw.m.review'), icon: 'star', fn: () => { location.hash = `#/review?course=${c.id}`; } },
+      { label: tx('cw.m.print'), icon: 'print', fn: () => V.print(c) },
       '-',
-      { label: c.archived ? 'שחזור מהארכיון' : 'העברה לארכיון', icon: 'archive', fn: () => {
-        S.commit(c.archived ? 'שחזור קורס' : 'העברה לארכיון', () => { S.course(c.id).archived = !c.archived; });
-        ui.toast(c.archived ? 'הקורס חזר לדשבורד' : 'הקורס הועבר לארכיון', { action: { label: 'בטל', fn: S.undo } });
-      } },
-      { label: 'מחיקת קורס', icon: 'trash', danger: true, fn: async () => {
-        if (!(await ui.confirm(`למחוק לגמרי את "${c.name}"?\n(אפשר לבטל מיד אחר כך עם Ctrl+Z)`, 'מחק', true))) return;
-        S.commit('מחיקת קורס', (st) => { st.courses.splice(st.courses.findIndex((x) => x.id === c.id), 1); });
-        location.hash = '#/';
-        ui.toast('הקורס נמחק', { action: { label: 'בטל', fn: S.undo } });
-      } },
-    ]);
+      P && { label: tx(c.archived ? 'cp.unarchive' : 'cp.archive'), icon: 'archive', fn: () => P.archive(c) },
+      P && { label: tx('cp.delete'), icon: 'trash', danger: true, fn: () => P.remove(c, () => { location.hash = '#/courses'; }) },
+    ], { localized: true });
+  }
+
+  /** Jump to another course of the same semester (or to the overview). */
+  function switchMenu(anchor, c) {
+    const list = S.state.courses.filter((x) => (x.semesterId || '') === (c.semesterId || '') && x.kind !== 'record' && !x.archived);
+    ui.menu(anchor, [
+      ...list.map((x) => ({ label: x.name, dot: x.color, active: x.id === c.id, fn: () => { location.hash = `#/course/${x.id}`; } })),
+      '-',
+      { label: tx('cw.allCourses'), icon: 'layers', fn: () => { location.hash = '#/courses'; } },
+    ], { localized: true });
   }
 
   /** Print the course: all items with notes, no filters. */
   V.print = (c) => {
-    const prev = { filter: view.filter, tag: view.tag, tab: view.tab };
-    Object.assign(view, { filter: 'all', tag: '', tab: 'items' });
+    const prev = { filter: view.filter, tag: view.tag, tab: view.tab, showDone: new Set(view.showDone) };
+    Object.assign(view, { filter: 'all', tag: '', tab: 'items', showDone: new Set(c.categories.map((x) => x.id)) });
     if (location.hash !== `#/course/${c.id}`) location.hash = `#/course/${c.id}`;
     CT.app.rerender();
     setTimeout(() => { window.print(); Object.assign(view, prev); CT.app.rerender(); }, 150);
@@ -750,6 +856,7 @@
     }
     if (!row || document.activeElement !== row) return false;
     const id = row.dataset.id;
+    view.focusId = id; // the row keeps focus after the re-render this key causes
     const rows = [...document.querySelectorAll('.row')];
     const i = rows.indexOf(row);
     const focusRow = (r) => { if (r) { r.focus(); view.focusId = r.dataset.id; } };
@@ -762,6 +869,7 @@
       case 'f': case 'כ': toggleFlag(id); return true;
       case 'e': case 'ק': V.itemDetails(id); return true;
       case 's': case 'ד': ui.statusMenu(row.querySelector('[data-action="status-menu"]'), id); return true;
+      case 'm': case 'צ': case 'ContextMenu': rowMenu(row.querySelector('[data-action="row-menu"]'), id); return true;
       case 'Delete': focusRow(rows[i + 1] || rows[i - 1]); V.deleteItem(id); return true;
       default: return false;
     }
