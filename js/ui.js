@@ -29,6 +29,9 @@
    * and stays Hebrew/RTL in English mode, like the page it came from. */
   ui.modal = ({ title, body, actions = [], wide = false, onClose, localized = false }) => {
     const prevFocus = document.activeElement;
+    // if the page is redrawn while the dialog is open, give the focus to the same control in the new page
+    const prevSel = prevFocus && prevFocus !== document.body
+      ? (prevFocus.id ? `#${CSS.escape(prevFocus.id)}` : prevFocus.dataset && prevFocus.dataset.action ? `[data-action="${CSS.escape(prevFocus.dataset.action)}"]` : null) : null;
     const wrap = document.createElement('div');
     wrap.className = 'modal-backdrop';
     wrap.innerHTML = `
@@ -48,6 +51,7 @@
       document.removeEventListener('keydown', onKey, true);
       if (onClose) onClose();
       if (prevFocus && document.contains(prevFocus)) prevFocus.focus();
+      else if (prevSel) { const x = document.querySelector(prevSel); if (x) x.focus(); }
     };
     actions.forEach((a) => {
       const btn = document.createElement('button');

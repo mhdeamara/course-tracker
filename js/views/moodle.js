@@ -137,7 +137,7 @@
     const rows = m.classes.map((c) => `<div class="mm-cls-row" data-cls="${esc(c.id)}">
         <div class="mm-cls-head">
           <input class="input mm-cls-name" data-f="name" value="${esc(c.name)}" aria-label="${t('mo.k.name')}" maxlength="40" dir="auto">
-          <button class="icon-btn" data-action="moodle-cls-del" title="${t('mo.k.delete')}" aria-label="${t('mo.k.deleteNamed', { name: c.name })}">${icon.trash}</button>
+          <button class="icon-btn" data-action="moodle-cls-del" title="${t('mo.k.delete')}" aria-label="${t('mo.k.deleteNamed', { name: V.clsName(c) })}">${icon.trash}</button>
         </div>
         <label class="small">${t('mo.k.keywords')}
           <textarea class="input" data-f="keywords" rows="2" dir="auto">${esc((c.keywords || []).join(', '))}</textarea></label>
@@ -722,9 +722,9 @@
       : t('mo.p.never')}${busy === 'auto' ? ` · ${t('mo.p.bg')}` : ''}${connected ? ` · <span class="muted">${m.serverCheckedAt ? t('mo.p.server', { ago: timeAgo(m.serverCheckedAt) }) : t('mo.p.serverOff')}</span>` : ''}</span></p>`;
     const err = m.linkError ? `<div class="td-alert mw-alert" role="alert">${icon.alert}<div class="td-alert-t"><b>${t('td.moodleFailed')}</b><span class="small">${esc(V.errorText(m.linkError))}</span></div>
         <span class="td-alert-a">${connected ? `<button class="btn btn-small" data-action="mm-refresh"${busy ? ' disabled' : ''}>${icon.refresh}<span>${t('mo.retry')}</span></button>` : ''}
-        <a class="btn btn-small btn-ghost" href="#/settings" data-action="mm-settings">${t('mo.p.settings')}</a></span></div>` : '';
+        <a class="btn btn-small btn-ghost" href="#/settings/moodle" data-action="mm-settings">${t('mo.p.settings')}</a></span></div>` : '';
     const how = conn === 'ok' || conn === 'error' ? '' : `<div class="card mm-connect">${icon.link}<p class="small">${t(conn === 'file' ? 'mo.p.connectLink' : 'mo.p.connectAccount')}</p>
-        <a class="btn btn-small" href="#/settings" data-action="mm-settings">${t('mo.p.settings')}</a></div>`;
+        <a class="btn btn-small" href="#/settings/moodle" data-action="mm-settings">${t('mo.p.settings')}</a></div>`;
     const range = connected && feed.state === 'ok' && Mo.rangeInfo(feed.preset, feed.what).warn ? V.rangeHTML() : '';
     /* what needs you: unclassified events (the not-assigned list is its own card below) */
     const needs = noneN && page.tab !== TAB_NONE ? `<p class="small mm-unclassified">${icon.info}<span>${t('mo.p.unclassified', { n: noneN })}</span>
@@ -861,11 +861,8 @@
     else V.onClick(a); // the not-assigned list
   }
 
-  /** Go to the Moodle card in settings (the link, categories). */
-  V.showSettings = (id = 'moodle') => {
-    const go = () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'start' }); };
-    if (location.hash !== '#/settings') { location.hash = '#/settings'; setTimeout(go, 60); } else go();
-  };
+  /** Go to the Moodle settings (the link, categories): the settings center opens its Moodle category at `id`. */
+  V.showSettings = (id = 'moodle') => { CT.views.settings.goTo(id); };
 
   /** Go to the "not assigned" list on the Moodle page. */
   V.showInbox = () => {

@@ -137,11 +137,21 @@
   const goalLine = (s, goal) => `<span class="gl-i">${Math.min(s.items, 99)}/${goal.items} פריטים</span> · <span class="gl-m">${fmt(s.minutes)}/${goal.minutes} דק׳</span>`;
 
   /* ---------- sidebar chip (the home screen uses V.dailyHTML below) ---------- */
+  /** A level name in the interface language. Names are stored (chosen titles) in Hebrew; a built-in one is shown
+   *  translated ("מיקוד" → "Focus", "אגדה 2" → "Legend 2"), anything else as it is. */
+  V.levelLabel = (name) => {
+    const m = /^(.*?)(?: (\d+))?$/.exec(String(name || ''));
+    const i = G.LEVEL_NAMES.indexOf(m[1]);
+    if (i < 0) return String(name || '');
+    const base = CT.i18n.tx('xp.lvl.' + (i + 1));
+    return m[2] ? `${base} ${m[2]}` : base;
+  };
   V.chipHTML = () => {
     if (!on()) return '';
     V.applyLook();
     const L = G.summary(S.state).level;
-    return `<a href="#/xp" class="sb-xp" id="sb-xp" aria-label="${CT.i18n.t('xp.chip', { n: L.n, title: title(L) })}"><span class="sb-xp-n${frameCls()}">${L.n}</span><span class="sb-xp-t"><b dir="auto">${esc(title(L))}</b>${bar(L.pct)}</span></a>`;
+    const name = V.levelLabel(title(L));
+    return `<a href="#/xp" class="sb-xp" id="sb-xp" aria-label="${CT.i18n.t('xp.chip', { n: L.n, title: name })}"><span class="sb-xp-n${frameCls()}">${L.n}</span><span class="sb-xp-t"><b dir="auto">${esc(name)}</b>${bar(L.pct)}</span></a>`;
   };
   function paintChip() {
     const el = document.getElementById('sb-xp');
@@ -288,7 +298,7 @@
         <div class="pick"><h3>תואר</h3><label class="field inline"><span class="muted small">מוצג במקום שם הרמה</span>
           <select data-title><option value="">שם הרמה הנוכחית</option>${G.titles(st).map((t) => `<option ${lk.title === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label></div>
         ${pick('sound', 'צליל משוב', unlock('sound'))}
-        <p class="muted small">הצלילים נשמעים רק אם "צלילי משוב" מופעל ב<a href="#/settings">הגדרות</a>.</p>
+        <p class="muted small">הצלילים נשמעים רק אם "צלילי משוב" מופעל ב<a href="#/settings/appearance">הגדרות</a>.</p>
       </section>`;
   }
 
@@ -334,7 +344,7 @@
       <div class="xp-page">
         <h1>נקודות ורמות</h1>
         <p class="muted xp-intro">נקודות על התקדמות אמיתית: סיום פריטים, זמן לימוד, הערות ויעדים. כל נקודה נרשמת ביומן, עם הסיבה.</p>
-        ${cfg.enabled === false ? '<div class="banner banner-info">הנקודות כבויות. אפשר להפעיל אותן ב<a href="#/settings">הגדרות</a>.</div>' : ''}
+        ${cfg.enabled === false ? '<div class="banner banner-info">הנקודות כבויות. אפשר להפעיל אותן ב<a href="#/settings/xp">הגדרות</a>.</div>' : ''}
         <section class="card xp-hero">
           <span class="xp-lvl xp-lvl-lg${frameCls()}" aria-hidden="true">${L.n}</span>
           <div class="xp-hero-main">
@@ -424,77 +434,79 @@
     if (!a) return;
     const act = a.dataset.gameAct;
     if (act === 'pen-seen') { V.penSeen(a.dataset.id); CT.app.rerender(); }
-    if (act === 'resume') S.commit('חזרה מהשהיה', (st) => G.resume(st));
+    if (act === 'resume') S.commit(CT.i18n.tx('xps.u.resume'), (st) => G.resume(st));
     if (act === 'five' && CT.focus) CT.focus.start(a.dataset.id, 5);
     if (act === 'pause') {
       const box = a.closest('.game-settings');
       const reason = box.querySelector('[name=pause-reason]').value;
       const until = box.querySelector('[name=pause-until]').value;
-      S.commit('השהיה', (st) => G.pause(st, reason, until));
-      CT.ui.toast('⏸️ מצב השהיה פעיל — בלי ניכויים, והרצף מחכה.');
+      S.commit(CT.i18n.tx('xps.u.pause'), (st) => G.pause(st, reason, until));
+      CT.ui.toast(CT.i18n.tx('xps.pauseToast'));
     }
     if (act === 'defaults') {
-      CT.ui.confirm('להחזיר את כל ערכי הנקודות, היעדים והניכויים לברירת המחדל? (הנקודות שכבר נצברו לא משתנות; ניכויים יכובו)', 'החזר').then((ok) => {
-        if (ok) S.commit('ברירת מחדל לנקודות', (st) => { G.ensure(st).cfg = {}; delete st.game.penaltyFrom; });
+      CT.ui.confirm(CT.i18n.tx('xps.defaultsQ'), CT.i18n.tx('xps.defaultsOk'), false, { localized: true }).then((ok) => {
+        if (ok) S.commit(CT.i18n.tx('xps.u.defaults'), (st) => { G.ensure(st).cfg = {}; delete st.game.penaltyFrom; });
       });
     }
   });
 
-  /* ---------- settings section (rendered inside the settings page) ---------- */
-  const SEVERITY = { gentle: { amount: 5, capDay: 5, capWeek: 15, label: 'עדין — 5 ביום, עד 15 בשבוע' }, normal: { amount: 15, capDay: 15, capWeek: 45, label: 'רגיל — 15 ביום, עד 45 בשבוע' }, firm: { amount: 25, capDay: 25, capWeek: 75, label: 'משמעותי — 25 ביום, עד 75 בשבוע' } };
+  /* ---------- settings section (rendered inside the settings center; translated) ---------- */
+  const SEVERITY = { gentle: { amount: 5, capDay: 5, capWeek: 15 }, normal: { amount: 15, capDay: 15, capWeek: 45 }, firm: { amount: 25, capDay: 25, capWeek: 75 } };
   const sevOf = (pen) => Object.keys(SEVERITY).find((k) => ['amount', 'capDay', 'capWeek'].every((f) => SEVERITY[k][f] === pen[f])) || 'custom';
-  const num = (path, label, v, min, max) => `<label class="field"><span>${label}</span><input type="number" inputmode="numeric" min="${min}" max="${max}" data-game="${path}" value="${v}"></label>`;
+  const num = (path, key, v, min, max) => `<label class="field"><span>${CT.i18n.t(key)}</span><input type="number" inputmode="numeric" min="${min}" max="${max}" data-game="${path}" value="${esc(v)}"></label>`;
 
   V.settingsHTML = () => {
+    const I = CT.i18n, t = I.t;
     const st = S.state;
     const gm = G.ensure(st);
     const cfg = G.cfg(st), p = cfg.pts, pen = cfg.penalty;
     const pause = G.activePause(gm);
     const sev = sevOf(pen);
+    const reason = (k) => t('xp.reason.' + k);
     return `<section class="card game-settings">
-      <h2>🎮 נקודות, יעדים וניכויים</h2>
+      <h2>${t('xps.title')}</h2>
       <div class="form-grid">
-        <label class="check-field"><input type="checkbox" data-game="enabled"${cfg.enabled !== false ? ' checked' : ''}> נקודות ורמות פעילות</label>
-        <label class="check-field"><input type="checkbox" data-game="extras"${cfg.extras !== false ? ' checked' : ''}> יעדים, אתגר יומי והישגים</label>
+        <label class="check-field"><input type="checkbox" data-game="enabled"${cfg.enabled !== false ? ' checked' : ''}> ${t('xps.on')}</label>
+        <label class="check-field"><input type="checkbox" data-game="extras"${cfg.extras !== false ? ' checked' : ''}> ${t('xps.extras')}</label>
       </div>
-      <h3>כמה שווה כל דבר</h3>
+      <h3>${t('xps.worth')}</h3>
       <div class="form-grid game-grid">
-        ${num('pts.easy', 'פריט קל', p.easy, 0, 200)}${num('pts.normal', 'פריט רגיל', p.normal, 0, 200)}${num('pts.hard', 'פריט קשה', p.hard, 0, 300)}
-        ${num('pts.per10min', 'כל 10 דק׳ לימוד', p.per10min, 0, 50)}${num('pts.adk', 'אזכרות בוקר/ערב (השלמה)', p.adk, 0, 50)}
+        ${num('pts.easy', 'xps.easy', p.easy, 0, 200)}${num('pts.normal', 'xps.normal', p.normal, 0, 200)}${num('pts.hard', 'xps.hard', p.hard, 0, 300)}
+        ${num('pts.per10min', 'xps.per10', p.per10min, 0, 50)}${num('pts.adk', 'xps.adk', p.adk, 0, 50)}
       </div>
-      <h3>יעדים (פריטים <b>או</b> דקות)</h3>
+      <h3>${t('xps.goals')}</h3>
       <div class="form-grid game-grid">
-        ${num('goals.day.items', 'ביום — פריטים', cfg.goals.day.items, 1, 50)}${num('goals.day.minutes', 'ביום — דקות', cfg.goals.day.minutes, 5, 600)}
-        ${num('goals.week.items', 'בשבוע — פריטים', cfg.goals.week.items, 1, 200)}${num('goals.week.minutes', 'בשבוע — דקות', cfg.goals.week.minutes, 30, 4000)}
+        ${num('goals.day.items', 'xps.dayItems', cfg.goals.day.items, 1, 50)}${num('goals.day.minutes', 'xps.dayMin', cfg.goals.day.minutes, 5, 600)}
+        ${num('goals.week.items', 'xps.weekItems', cfg.goals.week.items, 1, 200)}${num('goals.week.minutes', 'xps.weekMin', cfg.goals.week.minutes, 30, 4000)}
       </div>
-      <label class="field"><span>תזכורות עדינות באתר</span><select data-game="reminders">
-        ${[['off', 'כבויות'], ['low', 'פעם ביום, אחה״צ, אם עוד לא התחלת'], ['normal', 'כל שעתיים בערך, עד 3 ביום']].map(([k, l]) => `<option value="${k}" ${cfg.reminders === k ? 'selected' : ''}>${l}</option>`).join('')}
+      <label class="field"><span>${t('xps.nudges')}</span><select data-game="reminders">
+        ${['off', 'low', 'normal'].map((k) => `<option value="${k}" ${cfg.reminders === k ? 'selected' : ''}>${t('xps.nudge.' + k)}</option>`).join('')}
       </select></label>
 
-      <h3>ניכויים על יום מתחת למינימום</h3>
-      <p class="muted small">כבויים עד שמפעילים. יורדים רק מה<b>יתרה</b> (שממנה מממשים פרסים) — לא מהרמה, לא מההישגים, ואף פעם לא מתחת ל-0. אף פעם לא רטרואקטיבי: נספר רק מהיום שבו הופעלו, אחרי ${pen.graceDays} ימי חסד מתחילת השימוש, ורק 7 הימים האחרונים נבדקים. כל ניכוי מופיע ביומן עם הסיבה.</p>
+      <h3>${t('xps.pen')}</h3>
+      <p class="muted small">${t('xps.penHint', { n: pen.graceDays })}</p>
       <div class="form-grid">
-        <label class="check-field"><input type="checkbox" data-game="penalty.enabled"${pen.enabled ? ' checked' : ''}> להפעיל ניכויים</label>
-        <label class="field"><span>חומרה</span><select data-game="severity" ${pen.enabled ? '' : 'disabled'}>
-          ${Object.entries(SEVERITY).map(([k, v]) => `<option value="${k}" ${sev === k ? 'selected' : ''}>${v.label}</option>`).join('')}
-          ${sev === 'custom' ? `<option value="custom" selected>מותאם: ${pen.amount} ביום, עד ${pen.capWeek} בשבוע</option>` : ''}
+        <label class="check-field"><input type="checkbox" data-game="penalty.enabled"${pen.enabled ? ' checked' : ''}> ${t('xps.penOn')}</label>
+        <label class="field"><span>${t('xps.sev')}</span><select data-game="severity" ${pen.enabled ? '' : 'disabled'}>
+          ${Object.entries(SEVERITY).map(([k, v]) => `<option value="${k}" ${sev === k ? 'selected' : ''}>${t('xps.sev.' + k, { day: v.capDay, week: v.capWeek })}</option>`).join('')}
+          ${sev === 'custom' ? `<option value="custom" selected>${t('xps.sev.custom', { day: pen.amount, week: pen.capWeek })}</option>` : ''}
         </select></label>
       </div>
       <div class="form-grid game-grid">
-        ${num('penalty.minItems', 'מינימום — פריטים', pen.minItems, 1, 20)}${num('penalty.minMinutes', 'או דקות', pen.minMinutes, 5, 300)}
-        ${num('penalty.freezesPerMonth', 'הקפאות רצף בחודש', pen.freezesPerMonth, 0, 10)}
+        ${num('penalty.minItems', 'xps.minItems', pen.minItems, 1, 20)}${num('penalty.minMinutes', 'xps.minMin', pen.minMinutes, 5, 300)}
+        ${num('penalty.freezesPerMonth', 'xps.freezes', pen.freezesPerMonth, 0, 10)}
       </div>
-      <p class="muted small">הקפאה מכסה אוטומטית יום שהוחמץ — בלי ניכוי ובלי לשבור את הרצף.</p>
+      <p class="muted small">${t('xps.freezeHint')}</p>
 
-      <h3>מצב השהיה (מבחנים / מחלה / חופשה)</h3>
-      ${pause ? `<p>⏸️ מושהה מ-${u.fmtDateFull(pause.from)}${pause.to ? ` עד ${u.fmtDateFull(pause.to)}` : ''} · ${esc(G.PAUSE_REASONS[pause.reason] || '')}</p><button class="btn" data-game-act="resume">חזרה לשגרה</button>`
-        : `<p class="muted small">בזמן השהיה אין ניכויים, אין תזכורות, והרצף לא נשבר. הנקודות ממשיכות להיצבר כרגיל.</p>
+      <h3>${t('xps.pause')}</h3>
+      ${pause ? `<p>${t(pause.to ? 'xps.pausedTo' : 'xps.paused', { from: CT.ui.date(pause.from, 'full'), to: pause.to ? CT.ui.date(pause.to, 'full') : '', reason: G.PAUSE_REASONS[pause.reason] ? CT.i18n.tx('xp.reason.' + pause.reason) : '' })}</p><button class="btn" data-game-act="resume">${t('xps.resume')}</button>`
+        : `<p class="muted small">${t('xps.pauseHint')}</p>
         <div class="form-grid game-grid">
-          <label class="field"><span>סיבה</span><select name="pause-reason">${Object.entries(G.PAUSE_REASONS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
-          <label class="field"><span>עד (לא חובה)</span><input type="date" name="pause-until" min="${G.dayKey()}"></label>
+          <label class="field"><span>${t('xps.reason')}</span><select name="pause-reason">${Object.keys(G.PAUSE_REASONS).map((k) => `<option value="${k}">${reason(k)}</option>`).join('')}</select></label>
+          <label class="field"><span>${t('xps.until')}</span><input type="date" name="pause-until" data-keep="xp-pause-until" min="${G.dayKey()}"></label>
         </div>
-        <button class="btn" data-game-act="pause">⏸️ השהה מהיום</button>`}
-      <div class="btn-row"><button class="btn btn-ghost" data-game-act="defaults">החזר את כל הערכים לברירת המחדל</button></div>
+        <button class="btn" data-game-act="pause">${t('xps.pauseBtn')}</button>`}
+      <div class="btn-row"><button class="btn btn-ghost" data-game-act="defaults">${t('xps.defaults')}</button></div>
     </section>`;
   };
 
@@ -507,13 +519,13 @@
   V.onSettingsChange = (t) => {
     const path = t.dataset.game;
     if (path === 'penalty.enabled') {
-      S.commit(t.checked ? 'הפעלת ניכויים' : 'כיבוי ניכויים', (st) => G.setPenalties(st, t.checked));
-      CT.ui.toast(t.checked ? 'הניכויים פעילים מהיום. ימים קודמים לא נספרים.' : 'הניכויים כבויים.');
+      S.commit(CT.i18n.tx(t.checked ? 'xps.u.penOn' : 'xps.u.penOff'), (st) => G.setPenalties(st, t.checked));
+      CT.ui.toast(CT.i18n.tx(t.checked ? 'xps.penOnToast' : 'xps.penOffToast'));
       return;
     }
     if (path === 'severity') {
       const sv = SEVERITY[t.value];
-      if (sv) S.commit('חומרת ניכויים', (st) => { const c = G.ensure(st).cfg; c.penalty = Object.assign({}, c.penalty, { amount: sv.amount, capDay: sv.capDay, capWeek: sv.capWeek }); });
+      if (sv) S.commit(CT.i18n.tx('xps.u.sev'), (st) => { const c = G.ensure(st).cfg; c.penalty = Object.assign({}, c.penalty, { amount: sv.amount, capDay: sv.capDay, capWeek: sv.capWeek }); });
       return;
     }
     let v;
@@ -523,7 +535,7 @@
       if (!isFinite(n) || t.value === '') return;
       v = u.clamp(n, Number(t.min), Number(t.max));
     } else v = t.value;
-    S.commit('הגדרות נקודות', (st) => setPath(G.ensure(st).cfg, path, v));
+    S.commit(CT.i18n.tx('xps.u.cfg'), (st) => setPath(G.ensure(st).cfg, path, v));
   };
 
   /* ---------- gentle in-site reminders ---------- */

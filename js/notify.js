@@ -41,7 +41,7 @@
     if (mo.error) {
       out.push({ id: `moodle-error:${mo.error.code || ''}:${mo.error.at || ''}`, group: 'moodle', icon: 'alert', sev: 'warn',
         title: k('notif.moodle.error'), sub: mo.error.message ? [{ raw: String(mo.error.message) }] : [], at: mo.error.at || null,
-        actions: [{ k: 'notif.act.settings', act: 'settings', primary: true }] });
+        actions: [{ k: 'notif.act.settings', act: 'settings', arg: 'moodle', primary: true }] });
     }
     const inbox = mo.inbox || [];
     if (inbox.length) {
@@ -64,7 +64,7 @@
     const c = ctx.cloud || {};
     if (c.enabled && !c.signedIn && c.status !== 'conflict') {
       out.push({ id: 'signin', group: 'account', icon: 'cloud', sev: 'info', title: k('notif.signin'), sub: [], at: null,
-        actions: [{ k: 'notif.act.signin', act: 'settings', primary: true }] });
+        actions: [{ k: 'notif.act.signin', act: 'settings', arg: 'account', primary: true }] });
     }
 
     const x = ctx.xp;

@@ -80,7 +80,7 @@
 
   /* pages whose interface is fully translated: #main follows the interface language there; elsewhere it stays
    * Hebrew/RTL content until those pages are translated */
-  const TRANSLATED = new Set(['', 'courses', 'course', 'moodle', 'ai']);
+  const TRANSLATED = new Set(['', 'courses', 'course', 'moodle', 'ai', 'settings']);
   function markMain(main, translated) {
     if (translated) { main.removeAttribute('data-ct-content'); I18N.localized(main); }
     else { main.removeAttribute('data-ct-localized'); I18N.content(main); }
@@ -102,7 +102,7 @@
       semesters: () => views.semesters.render(main, { id, ...params }),
       grades: () => views.gpa.render(main, params),
       courses: () => views.courses.render(main, params),
-      settings: () => views.settings.render(main, params),
+      settings: () => views.settings.render(main, { id, ...params }),
       moodle: () => views.moodle.render(main, params),
       xp: () => views.xp.render(main, params),
       adhkar: () => views.adhkar.render(main, params),
@@ -162,7 +162,7 @@
     if (foot) foot.innerHTML = syncLine();
     paintSyncDot();
     // keep the settings page's sync panel current (but never while the user is typing there)
-    if (parseHash().route === 'settings' && !document.querySelector('.settings :focus')) app.rerender();
+    if (parseHash().route === 'settings' && !document.querySelector('#main .set :focus')) app.rerender();
   };
 
   const backupLine = () => {
@@ -204,7 +204,7 @@
       </nav>
       <div class="sb-bottom">
         <a href="#/settings" class="sb-item${route === 'settings' ? ' active' : ''}" title="${settings}"${route === 'settings' ? ' aria-current="page"' : ''}>${icon.gear}<span class="sb-label">${settings}</span></a>
-        <a href="#/settings" class="sb-foot" id="sb-foot">${CT.cloud && CT.cloud.enabled ? syncLine() : backupLine()}</a>
+        <a href="#/settings/${CT.cloud && CT.cloud.enabled ? 'account' : 'data'}" class="sb-foot" id="sb-foot">${CT.cloud && CT.cloud.enabled ? syncLine() : backupLine()}</a>
       </div>`;
     sb.querySelector('#sb-toggle').onclick = () => app.setSidebar(rail ? 'full' : 'rail');
     sb.querySelector('.sb-nav').onclick = onDest;
@@ -244,7 +244,7 @@
           <div class="search-results" id="search-results" role="listbox" hidden></div>
         </div>
         <div class="header-actions">
-          ${CT.cloud && CT.cloud.enabled ? `<a href="#/settings" id="sync-dot" class="sync-dot warn" aria-label="${tt('hd.sync')}"></a>` : ''}
+          ${CT.cloud && CT.cloud.enabled ? `<a href="#/settings/account" id="sync-dot" class="sync-dot warn" aria-label="${tt('hd.sync')}"></a>` : ''}
           <button type="button" class="icon-btn hd-search" id="search-btn" aria-label="${tt('hd.searchBtn')}">${icon.search}</button>
           <span id="timer-slot"></span>
           <span id="xp-slot" class="xp-slot"></span>
@@ -262,17 +262,22 @@
     document.getElementById('search-btn').onclick = app.openSearch;
     document.getElementById('bell-btn').onclick = () => CT.views.notifications.toggle();
     const more = document.getElementById('more-btn');
-    more.onclick = () => ui.menu(more, [
-      { label: tx('nav.settings'), icon: 'gear', fn: () => { location.hash = '#/settings'; } },
-      { label: tx(isDark() ? 'menu.light' : 'menu.dark'), icon: isDark() ? 'sun' : 'moon', fn: () => app.setTheme(isDark() ? 'light' : 'dark') },
-      { label: tx('menu.undo'), icon: 'undo', fn: S.undo },
-      { label: tx('menu.shortcuts'), icon: 'keyboard', fn: app.showHelp },
-      '-',
-      { label: tx('lang.switch'), fn: () => { I18N.setLang(I18N.lang() === 'he' ? 'en' : 'he'); const b = document.getElementById('more-btn'); if (b) b.focus(); } },
-    ], { localized: true });
+    // the menu holds only what is not already on screen: on a wide screen the header buttons and the sidebar's
+    // Settings link are visible, so they are not repeated here; on a phone they are hidden and the menu has them
+    const shown = (sel) => [...document.querySelectorAll(sel)].some((x) => x.getClientRects().length > 0);
+    more.onclick = () => ui.menu(more, app.moreItems(shown), { localized: true });
     bindSearch();
     applyTheme();
   }
+  /** The "more" menu: every function stays reachable, but nothing that is already visible on screen is repeated. */
+  app.moreItems = (shown) => [
+    shown('.sb-item[href="#/settings"]') ? null : { label: tx('nav.settings'), icon: 'gear', fn: () => { location.hash = '#/settings'; } },
+    shown('#theme-btn') ? null : { label: tx(isDark() ? 'menu.light' : 'menu.dark'), icon: isDark() ? 'sun' : 'moon', fn: () => app.setTheme(isDark() ? 'light' : 'dark') },
+    shown('#undo-btn') ? null : { label: tx('menu.undo'), icon: 'undo', fn: S.undo },
+    shown('#help-btn') ? null : { label: tx('menu.shortcuts'), icon: 'keyboard', fn: app.showHelp },
+    '-',
+    { label: tx('lang.switch'), fn: () => { I18N.setLang(I18N.lang() === 'he' ? 'en' : 'he'); const b = document.getElementById('more-btn'); if (b) b.focus(); } },
+  ].filter(Boolean).filter((x, i, a) => x !== '-' || (i > 0 && i < a.length - 1));
   app.renderHeader = () => { renderHeader(); app.rerender(); };
 
   /* ---------- global search ---------- */

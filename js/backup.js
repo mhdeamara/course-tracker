@@ -47,7 +47,7 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     markBackedUp();
     CT.store.emit();
-    CT.ui.toast('הגיבוי ירד לתיקיית ההורדות');
+    CT.ui.toast(CT.i18n.tx('bk.exported'));
   };
 
   /** The untouched copy saved right before the automatic schema upgrade (null if there was no upgrade). */
@@ -56,14 +56,14 @@
   };
   b.exportPreUpgrade = () => {
     const raw = b.preUpgradeRaw();
-    if (!raw) { CT.ui.toast('אין גיבוי משדרוג'); return; }
+    if (!raw) { CT.ui.toast(CT.i18n.tx('bk.noPre')); return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
     a.download = 'course-tracker-before-upgrade.json';
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    CT.ui.toast('הגיבוי שלפני השדרוג ירד לתיקיית ההורדות');
+    CT.ui.toast(CT.i18n.tx('bk.preExported'));
   };
 
   b.importFile = async (file) => {
@@ -72,19 +72,17 @@
       const obj = JSON.parse(await file.text());
       const cls = CT.model.classify(obj && obj.data !== undefined ? obj.data : obj);
       if (cls !== 'ok') {
-        CT.ui.toast(cls === 'newer'
-          ? 'הקובץ נשמר בגרסה חדשה יותר של האתר. צריך לעדכן את האתר כדי לייבא אותו.'
-          : 'גרסת הנתונים בקובץ לא תקינה. הקובץ לא יובא.', { error: true });
+        CT.ui.toast(CT.i18n.tx(cls === 'newer' ? 'bk.newer' : 'bk.malformed'), { error: true });
         return;
       }
       const data = CT.model.migrate(obj.data || obj);
       const n = data.courses.length;
-      const ok = await CT.ui.confirm(`לשחזר מהגיבוי? (${n} קורסים)\nהנתונים הנוכחיים יוחלפו — אפשר לבטל עם Ctrl+Z.`, 'שחזר');
+      const ok = await CT.ui.confirm(CT.i18n.tx('bk.restoreQ', { n }), CT.i18n.tx('bk.restore'), false, { localized: true });
       if (!ok) return;
-      CT.store.replace(data, 'ייבוא גיבוי');
-      CT.ui.toast('הגיבוי שוחזר', { action: { label: 'בטל', fn: CT.store.undo } });
+      CT.store.replace(data, CT.i18n.tx('bk.u.import'));
+      CT.ui.toast(CT.i18n.tx('bk.restored'), { action: { label: CT.i18n.tx('bk.undo'), fn: CT.store.undo } });
     } catch (e) {
-      CT.ui.toast('לא הצלחתי לקרוא את הקובץ: ' + e.message, { error: true });
+      CT.ui.toast(CT.i18n.tx('bk.unreadable'), { error: true }); // the parser's own message is not shown
     }
   };
 
@@ -133,9 +131,9 @@
       await idbOp('readwrite', (s) => s.put(h, 'backup'));
       b.status = 'granted';
       await b.writeNow();
-      CT.ui.toast('שמירה אוטומטית לקובץ הופעלה');
+      CT.ui.toast(CT.i18n.tx('bk.autoStarted'));
     } catch (e) {
-      if (e.name !== 'AbortError') CT.ui.toast('לא הצלחתי לחבר קובץ: ' + e.message, { error: true });
+      if (e.name !== 'AbortError') CT.ui.toast(CT.i18n.tx('bk.connectFailed'), { error: true });
     }
     CT.store.emit();
   };
@@ -145,8 +143,8 @@
     try {
       const p = await b.handle.requestPermission({ mode: 'readwrite' });
       b.status = p === 'granted' ? 'granted' : 'needs-permission';
-      if (b.status === 'granted') { await b.writeNow(); CT.ui.toast('השמירה האוטומטית פעילה'); }
-    } catch (e) { CT.ui.toast('אין הרשאה לקובץ', { error: true }); }
+      if (b.status === 'granted') { await b.writeNow(); CT.ui.toast(CT.i18n.tx('backup.auto')); }
+    } catch (e) { CT.ui.toast(CT.i18n.tx('bk.noPermission'), { error: true }); }
     CT.store.emit();
   };
 

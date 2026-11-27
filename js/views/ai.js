@@ -132,7 +132,7 @@
         ${chipHTML(s)}
         ${s === 'setup' ? `<p class="small">${t('aie.ai-not-configured', { secret: P.keySecret })}</p>` : ''}
         ${s === 'error' ? `<p class="small ai-error">${esc(tx(`aie.${KNOWN.includes(info.code) ? info.code : 'server'}`, { n: 2000, secret: P.keySecret }))}</p>` : ''}
-        ${s === 'signin' ? `<p class="small">${t('ai.signIn')}</p><a class="btn btn-small" href="#/settings">${t('aic.toSettings')}</a>` : ''}
+        ${s === 'signin' ? `<p class="small">${t('ai.signIn')}</p><a class="btn btn-small" href="#/settings/account">${t('aic.toSettings')}</a>` : ''}
         ${s === 'off' ? `<p class="small">${t('ai.notConfigured')}</p>` : ''}
         ${usageHTML()}
         ${signed ? `<div class="btn-row">
@@ -157,7 +157,7 @@
       if (back) back.focus({ preventScroll: true });
     }
     const card = document.getElementById('ai');
-    if (card && location.hash === '#/settings') card.outerHTML = V.section();
+    if (card && /^#\/settings\/ai/.test(location.hash)) card.outerHTML = V.section();
   }
 
   /* ---------- the page ---------- */

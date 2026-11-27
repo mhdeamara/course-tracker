@@ -210,7 +210,7 @@
     'moodle-open': () => go('#/moodle'),
     'moodle-seen': () => CT.views.moodle.markSeen(),
     'moodle-inbox': () => { V.close(false); CT.views.moodle.showInbox(); }, // the not-assigned list on the Moodle page
-    settings: () => go('#/settings'),
+    settings: (arg) => go(arg ? `#/settings/${arg}` : '#/settings'), // arg: the settings category (moodle, account)
     export: () => CT.backup.exportFile(),
     snooze: () => CT.backup.snooze(),
     regrant: () => CT.backup.regrant(),

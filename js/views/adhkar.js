@@ -261,7 +261,7 @@
   V.render = (main) => {
     if (!A.on(st())) {
       main.innerHTML = `<div class="adk-page-head"><h1>אזכרות</h1></div>
-        <section class="card"><p>האזכרות כבויות. אפשר להפעיל אותן ב<a href="#/settings">הגדרות</a>.</p></section>`;
+        <section class="card"><p>האזכרות כבויות. אפשר להפעיל אותן ב<a href="#/settings/adhkar">הגדרות</a>.</p></section>`;
       return;
     }
     if (!doc) {
@@ -281,7 +281,7 @@
         </li>`;
     };
     const t = w.times;
-    main.innerHTML = `<div class="adk-page-head"><h1>אזכרות</h1><a class="btn" href="#/settings">${icon.gear} הגדרות</a></div>
+    main.innerHTML = `<div class="adk-page-head"><h1>אזכרות</h1><a class="btn" href="#/settings/adhkar">${icon.gear} הגדרות</a></div>
       <section class="card"><ul class="adk-rows">${row('m')}${row('e')}${row('g')}</ul>
         ${w.auto && t ? `<p class="small muted adk-times">זמני היום (${esc((A.CITIES[c.city] || {}).name || '')}, מחושב במכשיר): שחר ${tm(t.fajr)} · זריחה ${tm(t.sunrise)} · צהריים ${tm(t.dhuhr)} · עסר ${tm(t.asr)} · שקיעה ${tm(t.maghrib)} · עשא ${tm(t.isha)}</p>` : ''}
       </section>
@@ -299,7 +299,20 @@
     || (CT.focus && CT.focus.active && CT.focus.active())
     || (CT.timer && CT.timer.busy && CT.timer.busy())
     || (CT.game && st().game && CT.game.activePause(st().game))
-    || document.querySelector('.modal-backdrop'));
+    || document.querySelector('.modal-backdrop')
+    || V.covering());
+  /**
+   * Places a reminder card must not cover: a field you are typing in, the AI conversation (its page or the quick panel)
+   * and an open menu. The cards wait there (hidden, not dismissed — nothing is marked seen, the schedule, quiet hours
+   * and points are unchanged) and come back as soon as you leave.
+   */
+  V.covering = () => {
+    const a = document.activeElement;
+    if (a && a.closest && !a.closest('#adk-toasts')
+      && (a.isContentEditable || a.matches('textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit])'))) return true;
+    if (document.querySelector('.chat-panel, .menu[role=menu], .nc-layer')) return true;
+    return /^#\/ai(\/|\?|$)/.test(location.hash);
+  };
   const toastBox = () => {
     let box = document.getElementById('adk-toasts');
     if (!box) { box = document.createElement('div'); box.id = 'adk-toasts'; box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
@@ -313,7 +326,9 @@
     const t = document.createElement('div');
     t.className = 'adk-toast' + (motionOk() ? '' : ' still');
     t.setAttribute('role', 'status');
-    t.innerHTML = `<button class="icon-btn adk-toast-x" aria-label="סגירה">${icon.close}</button>
+    t.setAttribute('lang', CT.i18n.lang());
+    t.setAttribute('dir', CT.i18n.dir());
+    t.innerHTML = `<button class="icon-btn adk-toast-x" aria-label="${CT.i18n.t('adks.close')}">${icon.close}</button>
       <p class="adk-toast-t">${title}</p>${body ? `<div class="adk-toast-b">${body}</div>` : ''}
       <div class="adk-toast-a">${actions.map((a, k) => `<button class="btn${k === 0 ? ' btn-primary' : ''} btn-small" data-k="${k}">${esc(a.label)}</button>`).join('')}</div>`;
     let timer = null;
@@ -349,13 +364,13 @@
   const markSeen = (p, day) => updMem((m) => { m.seen = m.seen || {}; m.seen[p] = day; });
   const showPeriod = (p) => {
     const day = A.dayKey();
-    if (document.hidden) { markSeen(p, day); sysNotify(NAMES[p], `${HE[p]} — אפשר להתחיל כשנוח.`); return; }
+    if (document.hidden) { markSeen(p, day); sysNotify(NAMES[p], CT.i18n.tx('adks.whenReady', { name: CT.i18n.tx('adkd.label.' + p) })); return; }
     if (perCard && document.contains(perCard.el)) return;
     const seen = () => { markSeen(p, day); perCard = null; };
     const el = note({
       title: `<span lang="ar" dir="rtl">${NAMES[p]}</span>`,
-      body: `<p class="small muted">${HE[p]} — להתחיל עכשיו?</p>`,
-      actions: [{ label: 'להתחיל', fn: () => { seen(); V.open(p); } }, { label: 'אחר כך', fn: seen }],
+      body: `<p class="small muted">${CT.i18n.t('adks.startQ', { name: CT.i18n.tx('adkd.label.' + p) })}</p>`,
+      actions: [{ label: CT.i18n.tx('adks.start'), fn: () => { seen(); V.open(p); } }, { label: CT.i18n.tx('adks.later'), fn: seen }],
       sticky: true,
       onX: seen,
     });
@@ -365,6 +380,8 @@
   const tidy = () => {
     const box = document.getElementById('adk-toasts');
     if (box) box.hidden = busy();
+    const room = box && !box.hidden && box.children.length ? Math.ceil(box.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--adk-room', room ? room + 'px' : '0px');
     if (!perCard) return;
     const s = st();
     if (!document.contains(perCard.el)) { perCard = null; return; }
@@ -381,7 +398,7 @@
     note({
       title: `<span class="adk-toast-ar" lang="ar" dir="rtl">${esc(it.text)}</span>`,
       body: `<p class="small muted" lang="ar" dir="rtl">${esc(it.source)}${it.count > 1 ? ` · ${it.count} ×` : ''}</p>`,
-      actions: [{ label: 'לספור', fn: () => V.open('g', it.id) }, { label: 'השתק היום', fn: () => { updMem((x) => { x.muted = A.dayKey(); }); ui.toast('האזכרות הכלליות מושתקות עד מחר'); } }],
+      actions: [{ label: CT.i18n.tx('adks.count'), fn: () => V.open('g', it.id) }, { label: CT.i18n.tx('adks.mute'), fn: () => { updMem((x) => { x.muted = A.dayKey(); }); ui.toast(CT.i18n.tx('adks.mutedToast')); } }],
       ms: 20000,
     });
   };
@@ -413,63 +430,65 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(check, 800); });
   };
 
-  /* ---------- settings ---------- */
+  /* ---------- settings (rendered inside the settings center; translated) ---------- */
   const opt = (v, cur, label) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(label)}</option>`;
+  const freqLabel = (f) => CT.i18n.tx(f === 30 ? 'adks.freq.30' : f === 60 ? 'adks.freq.60' : f ? 'adks.freq.hours' : 'adks.freq.off', { n: f / 60 });
   V.settingsHTML = () => {
+    const I = CT.i18n, t = I.t, tx = I.tx, th = I.th;
     const c = cfg();
     const on = c.enabled !== false;
     const m = mem();
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
     const w = A.windows(c);
-    const t = w.times;
+    const tt = w.times;
     return `<section class="card adk-settings" id="adhkar-settings">
-      <h2>🌙 אזכרות</h2>
-      <label class="check-field"><input type="checkbox" data-adk-set="enabled" ${on ? 'checked' : ''}> <span>להציג אזכרות (כיבוי מסתיר את כל החלק הזה)</span></label>
+      <h2>${t('adks.title')}</h2>
+      <label class="check-field"><input type="checkbox" data-adk-set="enabled" ${on ? 'checked' : ''}> <span>${t('adks.on')}</span></label>
       ${on ? `
-      <h3>חלונות זמן</h3>
-      <div class="field inline"><span>שיטה</span>
-        <select data-adk-set="mode">${opt('manual', c.mode, 'שעות קבועות שאני בוחר')}${opt('auto', c.mode, 'לפי זמני התפילה (מחושב במכשיר, בלי אינטרנט)')}</select></div>
+      <h3>${t('adks.windows')}</h3>
+      <label class="field inline"><span>${t('adks.mode')}</span>
+        <select data-adk-set="mode">${opt('manual', c.mode, tx('adks.mode.manual'))}${opt('auto', c.mode, tx('adks.mode.auto'))}</select></label>
       ${c.mode === 'auto' ? `
         <div class="form-grid adk-grid">
-          <label class="field"><span>עיר</span><select data-adk-set="city">${Object.entries(A.CITIES).map(([k, x]) => opt(k, c.city, x.name)).join('')}</select></label>
-          ${c.city === 'custom' ? `<label class="field"><span>קו רוחב</span><input type="number" step="0.001" min="-66" max="66" data-adk-set="lat" value="${c.lat ?? ''}" dir="ltr"></label>
-          <label class="field"><span>קו אורך</span><input type="number" step="0.001" min="-180" max="180" data-adk-set="lng" value="${c.lng ?? ''}" dir="ltr"></label>` : ''}
-          <label class="field"><span>שיטת חישוב</span><select data-adk-set="method">${Object.entries(A.METHODS).map(([k, x]) => opt(k, c.method, x.name)).join('')}</select></label>
-          <label class="field"><span>עסר</span><select data-adk-set="asr">${Object.entries(A.ASR).map(([k, x]) => opt(k, c.asr, x.name)).join('')}</select></label>
+          <label class="field"><span>${t('adks.city')}</span><select data-adk-set="city">${Object.keys(A.CITIES).map((k) => opt(k, c.city, tx('adks.city.' + k))).join('')}</select></label>
+          ${c.city === 'custom' ? `<label class="field"><span>${t('adks.lat')}</span><input type="number" step="0.001" min="-66" max="66" data-adk-set="lat" value="${c.lat ?? ''}" dir="ltr"></label>
+          <label class="field"><span>${t('adks.lng')}</span><input type="number" step="0.001" min="-180" max="180" data-adk-set="lng" value="${c.lng ?? ''}" dir="ltr"></label>` : ''}
+          <label class="field"><span>${t('adks.method')}</span><select data-adk-set="method">${Object.keys(A.METHODS).map((k) => opt(k, c.method, tx('adks.method.' + k))).join('')}</select></label>
+          <label class="field"><span>${t('adks.asr')}</span><select data-adk-set="asr">${Object.keys(A.ASR).map((k) => opt(k, c.asr, tx('adks.asr.' + k))).join('')}</select></label>
         </div>
-        <p class="small muted">בוקר: מהשחר (פג׳ר) עד הצהריים (ט׳הר). ערב: מעסר עד עשא. ${w.auto && t ? `היום: בוקר ${rng(w.m[0], w.m[1])}, ערב ${rng(w.e[0], w.e[1])}.` : 'חסרים נתונים — בינתיים משתמשים בשעות הקבועות.'} השעון ואזור הזמן הם של המכשיר.</p>`
+        <p class="small muted">${t('adks.autoHint')} ${w.auto && tt ? th('adks.today', { m: rng(w.m[0], w.m[1]), e: rng(w.e[0], w.e[1]) }) : t('adks.noData')} ${t('adks.clock')}</p>`
       : `<div class="form-grid adk-grid">
-          <label class="field"><span>בוקר מ־</span><input type="time" data-adk-set="morning.from" value="${esc(c.morning.from)}"></label>
-          <label class="field"><span>עד</span><input type="time" data-adk-set="morning.to" value="${esc(c.morning.to)}"></label>
-          <label class="field"><span>ערב מ־</span><input type="time" data-adk-set="evening.from" value="${esc(c.evening.from)}"></label>
-          <label class="field"><span>עד</span><input type="time" data-adk-set="evening.to" value="${esc(c.evening.to)}"></label>
+          <label class="field"><span>${t('adks.mFrom')}</span><input type="time" data-adk-set="morning.from" value="${esc(c.morning.from)}"></label>
+          <label class="field"><span>${t('adks.to')}</span><input type="time" data-adk-set="morning.to" value="${esc(c.morning.to)}"></label>
+          <label class="field"><span>${t('adks.eFrom')}</span><input type="time" data-adk-set="evening.from" value="${esc(c.evening.from)}"></label>
+          <label class="field"><span>${t('adks.to')}</span><input type="time" data-adk-set="evening.to" value="${esc(c.evening.to)}"></label>
         </div>`}
-      <label class="check-field"><input type="checkbox" data-adk-set="startToast" ${c.startToast ? 'checked' : ''}> <span>הודעה עדינה בתחילת חלון הבוקר/הערב (אם עוד לא נעשה)</span></label>
+      <label class="check-field"><input type="checkbox" data-adk-set="startToast" ${c.startToast ? 'checked' : ''}> <span>${t('adks.startToast')}</span></label>
 
-      <h3>אזכרה כללית במהלך היום</h3>
+      <h3>${t('adks.general')}</h3>
       <div class="form-grid adk-grid">
-        <label class="field"><span>תדירות</span><select data-adk-set="general.every">${A.FREQS.map((f) => opt(f, c.general.every, f === 30 ? 'כל חצי שעה' : f === 60 ? 'כל שעה' : f ? `כל ${f / 60} שעות` : 'כבוי')).join('')}</select></label>
-        <label class="field"><span>שעות שקט מ־</span><input type="time" data-adk-set="general.quietFrom" value="${esc(c.general.quietFrom)}"></label>
-        <label class="field"><span>עד</span><input type="time" data-adk-set="general.quietTo" value="${esc(c.general.quietTo)}"></label>
+        <label class="field"><span>${t('adks.freq')}</span><select data-adk-set="general.every">${A.FREQS.map((f) => opt(f, c.general.every, freqLabel(f))).join('')}</select></label>
+        <label class="field"><span>${t('adks.quietFrom')}</span><input type="time" data-adk-set="general.quietFrom" value="${esc(c.general.quietFrom)}"></label>
+        <label class="field"><span>${t('adks.to')}</span><input type="time" data-adk-set="general.quietTo" value="${esc(c.general.quietTo)}"></label>
       </div>
-      ${m.muted === A.dayKey() ? '<p class="small muted">מושתק היום. <button class="btn btn-ghost btn-small" data-adk-act="unmute">לבטל השתקה</button></p>' : (Number(c.general.every) ? '<p class="small"><button class="btn btn-ghost btn-small" data-adk-act="mute">השתק להיום</button></p>' : '')}
-      <p class="small muted">התזכורות מופיעות רק כשהאתר פתוח, ולא בזמן מסך ריכוז, "רק 5 דקות", טיימר פעיל או מצב השהיה — הן מחכות לסוף.</p>
+      ${m.muted === A.dayKey() ? `<p class="small muted">${t('adks.muted')} <button class="btn btn-ghost btn-small" data-adk-act="unmute">${t('adks.unmute')}</button></p>` : (Number(c.general.every) ? `<p class="small"><button class="btn btn-ghost btn-small" data-adk-act="mute">${t('adks.mute')}</button></p>` : '')}
+      <p class="small muted">${t('adks.waits')}</p>
 
-      <h3>התראות, צליל ורטט</h3>
+      <h3>${t('adks.alerts')}</h3>
       <label class="check-field"><input type="checkbox" data-adk-dev="notify" ${m.notify && perm === 'granted' ? 'checked' : ''} ${perm === 'unsupported' || perm === 'denied' ? 'disabled' : ''}>
-        <span>התראות דפדפן כשהאתר פתוח ברקע (במכשיר הזה)${perm === 'denied' ? ' — חסום בדפדפן' : perm === 'unsupported' ? ' — לא נתמך כאן' : ''}</span></label>
-      <label class="check-field"><input type="checkbox" data-adk-set="sound" ${c.sound ? 'checked' : ''}> <span>צליל עדין (כבוי כברירת מחדל)</span></label>
-      <label class="check-field"><input type="checkbox" data-adk-set="vibrate" ${c.vibrate ? 'checked' : ''}> <span>רטט קצר בכל הקשה (בטלפונים שתומכים)</span></label>
+        <span>${t('adks.notify')}${perm === 'denied' ? ' — ' + t('adks.blocked') : perm === 'unsupported' ? ' — ' + t('adks.unsupported') : ''}</span></label>
+      <label class="check-field"><input type="checkbox" data-adk-set="sound" ${c.sound ? 'checked' : ''}> <span>${t('adks.sound')}</span></label>
+      <label class="check-field"><input type="checkbox" data-adk-set="vibrate" ${c.vibrate ? 'checked' : ''}> <span>${t('adks.vibrate')}</span></label>
 
-      <h3>מסך הקריאה</h3>
-      <label class="field inline"><span>גודל הטקסט הערבי</span>
+      <h3>${t('adks.reading')}</h3>
+      <label class="field inline"><span>${t('adks.font')}</span>
         <input type="range" min="0.8" max="2" step="0.1" data-adk-set="font" value="${Number(c.font) || 1}" aria-valuetext="${Math.round((Number(c.font) || 1) * 100)}%"></label>
       <p class="adk-sample" lang="ar" dir="rtl" style="--adk-scale:${Number(c.font) || 1}">سُبْحَانَ اللَّهِ وَبِحَمْدِهِ</p>
 
-      <h3>נקודות</h3>
-      <label class="check-field"><input type="checkbox" data-adk-set="points" ${c.points ? 'checked' : ''}> <span>לחבר למערכת הנקודות: +${esc(String(ptsAdk()))} על השלמת הבוקר או הערב במסך הקריאה (פעם אחת לכל חלון ביום). "כבר אמרתי" לא נותן נקודות. אף פעם לא ניכויים, ולא נכנס למינימום היומי או לרצף הלימוד.</span></label>
-      <p class="small muted">את ערך הנקודות אפשר לשנות בדף הנקודות ← הגדרות. כיבוי לא מוריד נקודות שכבר התקבלו.</p>
-      <p><button class="btn btn-small" data-adk-act="reset">החזרת הגדרות האזכרות לברירת המחדל</button></p>
+      <h3>${t('adks.points')}</h3>
+      <label class="check-field"><input type="checkbox" data-adk-set="points" ${c.points ? 'checked' : ''}> <span>${t('adks.pointsOn', { n: ptsAdk() })}</span></label>
+      <p class="small muted">${t('adks.pointsHint')}</p>
+      <p><button class="btn btn-small" data-adk-act="reset">${t('adks.reset')}</button></p>
       ` : ''}
     </section>`;
   };
@@ -489,7 +508,7 @@
       const k = inp.dataset.adkSet;
       const v = valueOf(inp);
       if ((k === 'morning.from' || k === 'morning.to' || k === 'evening.from' || k === 'evening.to' || k.startsWith('general.quiet')) && A.toMin(v) == null) return;
-      S.commit('הגדרות אזכרות', (s) => A.set(s, k, v));
+      S.commit(CT.i18n.tx('adks.u.cfg'), (s) => A.set(s, k, v));
       if (k === 'general.every') updMem((m) => { m.lastGen = Date.now(); });
       if (k === 'enabled') { if (v) V.load().catch(() => {}); if (CT.app && CT.app.renderHeader) CT.app.renderHeader(); }
     } else if (inp.dataset.adkDev === 'notify') {
@@ -497,7 +516,7 @@
       if (!('Notification' in window)) return;
       Notification.requestPermission().then((r) => {
         updMem((m) => { m.notify = r === 'granted'; });
-        if (r !== 'granted') ui.toast('הדפדפן לא אישר התראות');
+        if (r !== 'granted') ui.toast(CT.i18n.tx('adks.denied'));
         CT.app.rerender();
       });
     }
@@ -515,8 +534,8 @@
     const a = b.dataset.adkAct;
     if (a === 'mute') { updMem((m) => { m.muted = A.dayKey(); }); CT.app.rerender(); }
     else if (a === 'unmute') { updMem((m) => { delete m.muted; }); CT.app.rerender(); }
-    else if (a === 'reset') ui.confirm('להחזיר את כל הגדרות האזכרות לברירת המחדל? ההתקדמות היומית נשארת.', 'החזרה')
-      .then((ok) => { if (ok) S.commit('איפוס הגדרות אזכרות', (s) => A.reset(s)); });
+    else if (a === 'reset') ui.confirm(CT.i18n.tx('adks.resetQ'), CT.i18n.tx('adks.resetOk'), false, { localized: true })
+      .then((ok) => { if (ok) S.commit(CT.i18n.tx('adks.u.reset'), (s) => A.reset(s)); });
   });
 
   // the home row sits in the daily-progress card of the "היום" screen

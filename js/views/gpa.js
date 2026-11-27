@@ -82,7 +82,7 @@
       <div class="gpa-page">
         <h1>ממוצע וציונים</h1>
         <p class="small gpa-disclaimer">ⓘ זו הערכה לצורכי מעקב אישי בלבד. הממוצע הרשמי הוא זה שמופיע במערכת האקדמית של הטכניון.
-          כללי החישוב (קורס חוזר, נכשל, ציון עובר, פטור) — <a href="#/settings">בהגדרות</a>.</p>
+          כללי החישוב (קורס חוזר, נכשל, ציון עובר, פטור) — <a href="#/settings/degree">בהגדרות</a>.</p>
 
         <div class="card gpa-filters">
           <label class="small">סמסטר: <select data-f="sem" class="chip-select"><option value="">כל הסמסטרים</option>${sems.map((s) => `<option value="${s.id}" ${view.sem === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>

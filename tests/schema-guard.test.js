@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const JS = path.join(__dirname, '..', 'js');
-const MODULES = ['utils', 'ical', 'moodle', 'game', 'adhkar', 'model', 'schema-guard', 'store', 'stats', 'backup', 'cloud'];
+const MODULES = ['utils', 'i18n', 'ical', 'moodle', 'game', 'adhkar', 'model', 'schema-guard', 'store', 'stats', 'backup', 'cloud'];
 const UID = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 

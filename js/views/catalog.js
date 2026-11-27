@@ -270,6 +270,8 @@
     S.commit('בחירת התמחות', (s) => { s.settings.catalog = Object.assign({ faculty: 'ee', year: null }, s.settings.catalog, { spec: id || '' }); });
   };
   /** Settings block: chosen groups (checkboxes) and specialization (select) for the current catalog. */
+  /** A group's progress from your courses (for the settings center). */
+  V.groupStatus = (g) => groupState(g, mine());
   V.picksHTML = () => {
     if (!K.ready) return '';
     const p = picks();

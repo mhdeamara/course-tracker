@@ -94,7 +94,7 @@
   }
 
   function gateHTML() {
-    const act = st.gate === 'sign-in' ? `<a class="btn btn-small btn-primary" href="#/settings" data-c="settings">${t('aic.toSettings')}</a>` : '';
+    const act = st.gate === 'sign-in' ? `<a class="btn btn-small btn-primary" href="#/settings/account" data-c="settings">${t('aic.toSettings')}</a>` : '';
     return `<div class="chat-empty chat-gate">${icon[st.gate === 'sign-in' ? 'cloud' : 'alert']}<p>${t(`aic.gate.${st.gate}`, { secret: P.keySecret })}</p>${act}</div>`;
   }
 
