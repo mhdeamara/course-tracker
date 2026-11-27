@@ -318,9 +318,53 @@
     if ((e.key === 'a' || e.key === 'ש') && CT.views.ai) { e.preventDefault(); CT.views.ai.open(); }
   });
 
+  /* ---------- read-only lock: one global warning (schema-guard.js) ---------- */
+  function renderLockBar() {
+    const el = document.getElementById('lock-bar');
+    const G = CT.guard;
+    if (!el || !G) return;
+    const i = G.info;
+    el.hidden = !i;
+    if (!i) { el.innerHTML = ''; return; }
+    const bad = i.reason === 'malformed';
+    const note = G.storeFailed ? 'לא הצלחתי לשמור עותק בדפדפן. כדאי להוריד גיבוי עכשיו.' : '';
+    el.innerHTML = `
+      <div class="lock-text">
+        <b class="lock-title" tabindex="-1">${bad ? 'גרסת הנתונים לא תקינה' : 'נדרש עדכון גרסה'}</b>
+        <span>האתר במצב קריאה בלבד כדי להגן על הנתונים שלך.</span>
+        ${G.msg || note ? `<span class="lock-msg">${esc(G.msg || note)}</span>` : ''}
+      </div>
+      <div class="lock-actions">
+        ${bad ? '' : '<button class="btn btn-primary" type="button" data-lock="update">עדכן עכשיו</button>'}
+        <button class="btn" type="button" data-lock="download">הורד גיבוי</button>
+      </div>`;
+  }
+  function initLockBar() {
+    const G = CT.guard;
+    const el = document.getElementById('lock-bar');
+    if (!G || !el) return;
+    G.onChange(() => { renderLockBar(); if (CT.cloud && CT.cloud.enabled) app.updateSyncBadge(); });
+    G.onNudge = () => {
+      el.classList.remove('flash');
+      void el.offsetWidth; // restart the animation
+      el.classList.add('flash');
+      const t = el.querySelector('.lock-title');
+      if (t) t.focus();
+    };
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-lock]');
+      if (!b) return;
+      if (b.dataset.lock === 'download') G.download();
+      else if (b.dataset.lock === 'update') { b.disabled = true; G.update().finally(() => { b.disabled = false; }); }
+    });
+    G.watch();
+    renderLockBar();
+  }
+
   /* ---------- boot ---------- */
   app.start = async () => {
     const result = S.load();
+    initLockBar();
     await CT.backup.init();
     renderHeader();
     S.subscribe(() => app.rerender());

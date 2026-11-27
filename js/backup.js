@@ -36,6 +36,8 @@
 
   /* ---------- manual export / import ---------- */
   b.exportFile = () => {
+    // read-only lock: the screen shows a normalized copy — download the untouched originals instead
+    if (CT.guard && CT.guard.locked()) { CT.guard.download(); return; }
     const blob = new Blob([b.serialize()], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -66,7 +68,15 @@
 
   b.importFile = async (file) => {
     try {
+      if (CT.guard && CT.guard.locked()) { CT.guard.nudge(); return; } // would replace data this version can't read
       const obj = JSON.parse(await file.text());
+      const cls = CT.model.classify(obj && obj.data !== undefined ? obj.data : obj);
+      if (cls !== 'ok') {
+        CT.ui.toast(cls === 'newer'
+          ? 'הקובץ נשמר בגרסה חדשה יותר של האתר. צריך לעדכן את האתר כדי לייבא אותו.'
+          : 'גרסת הנתונים בקובץ לא תקינה. הקובץ לא יובא.', { error: true });
+        return;
+      }
       const data = CT.model.migrate(obj.data || obj);
       const n = data.courses.length;
       const ok = await CT.ui.confirm(`לשחזר מהגיבוי? (${n} קורסים)\nהנתונים הנוכחיים יוחלפו — אפשר לבטל עם Ctrl+Z.`, 'שחזר');
@@ -149,8 +159,10 @@
 
   b.writeNow = async () => {
     if (!b.handle || b.status !== 'granted') return;
+    if (CT.guard && CT.guard.locked()) return; // never write the read-only display copy over a backup file
     try {
       const w = await b.handle.createWritable();
+      if (CT.guard && CT.guard.locked()) { try { await w.abort(); } catch (_) { /* ignore */ } return; } // locked meanwhile
       await w.write(b.serialize());
       await w.close();
       b.lastWrite = new Date();
@@ -162,7 +174,9 @@
     }
   };
 
-  b.scheduleAutoSave = u.debounce(() => { b.writeNow(); }, 2000);
+  let autoTimer = null;
+  b.scheduleAutoSave = () => { clearTimeout(autoTimer); autoTimer = setTimeout(() => { autoTimer = null; b.writeNow(); }, 2000); };
+  b.cancelAuto = () => { clearTimeout(autoTimer); autoTimer = null; };
 
   CT.backup = b;
 })(window.CT);

@@ -8,6 +8,23 @@
   m.BACKUP_KEY = `ct.backup.pre-v${m.VERSION}`; // untouched copy of the data, saved right before upgrading to this version
   m.OLD_BACKUP_KEYS = ['ct.backup.pre-v3', 'ct.backup.pre-v2'];
 
+  /** Schema version of stored / received data: { ok: true, v } or { ok: false } (malformed).
+   *  Valid: an integer 1..999, or such a number as a string of digits. Missing = 1 (the first app version had none).
+   *  Same rules as public.ct_schema_of in supabase/schema-guard.sql. */
+  m.SCHEMA_MAX = 999;
+  m.schemaOf = (data) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false };
+    if (!Object.prototype.hasOwnProperty.call(data, 'version')) return { ok: true, v: 1 };
+    let v = data.version;
+    if (typeof v === 'string' && /^[1-9]\d{0,2}$/.test(v)) v = Number(v);
+    return Number.isInteger(v) && v >= 1 && v <= m.SCHEMA_MAX ? { ok: true, v } : { ok: false };
+  };
+  /** 'ok' (this app can read and save it) | 'newer' (saved by a newer app version) | 'malformed'. */
+  m.classify = (data) => {
+    const s = m.schemaOf(data);
+    return !s.ok ? 'malformed' : s.v > m.VERSION ? 'newer' : 'ok';
+  };
+
   m.TERMS = { winter: 'חורף', spring: 'אביב', summer: 'קיץ' };
   m.TERM_ORDER = ['winter', 'spring', 'summer'];
   /** How a finished course ended. */
@@ -150,8 +167,9 @@
     const st = Object.assign(base, data);
     st.settings = Object.assign(m.emptyState().settings, data.settings || {});
     st.settings.gpa = Object.assign({}, m.DEFAULT_GPA, (data.settings && data.settings.gpa) || {});
-    if (Number(data.version) > m.VERSION) st.meta.newerSchema = Number(data.version); // saved by a newer app version
     st.meta = Object.assign(m.emptyState().meta, data.meta || {});
+    // saved by a newer app version: only ever a read-only display copy (see schema-guard.js), never saved
+    if (m.classify(data) === 'newer') st.meta.newerSchema = m.schemaOf(data).v;
     st.semesters = Array.isArray(st.semesters) ? st.semesters : [];
     // replace the placeholder dates from the first version with the official ones
     st.semesters.forEach((s) => {

@@ -1449,3 +1449,26 @@ body.adk-open { overflow: hidden; }
 }
 #adk-toasts[hidden], body:has(.focus-screen) #adk-toasts { display: none; } /* waits (not dismissed) during focus */
 @media print { .adk, #adk-toasts { display: none !important; } }
+
+/* ---------- read-only lock (schema-guard.js): one global warning above every page ---------- */
+.lock-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4);
+  margin: var(--sp-4) max(var(--sp-5), calc((100% - 1180px) / 2 + var(--sp-5))) 0;
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius); color: var(--text);
+  background: var(--danger-bg); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.lock-bar[hidden] { display: none; }
+.lock-text { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lock-title { color: var(--danger); font-size: var(--fs-base); outline-offset: 3px; }
+.lock-msg { font-size: var(--fs-sm); color: var(--muted); }
+.lock-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.lock-actions .btn { min-height: 44px; }
+.lock-bar.flash { animation: lock-flash 700ms var(--ease); }
+@keyframes lock-flash { 40% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 35%, transparent); } }
+@media (min-width: 1000px) { .lock-bar { margin-inline: max(28px, calc((100% - 1180px) / 2 + 28px)); } }
+@media (max-width: 640px) {
+  .lock-bar { margin: 12px 12px 0; }
+  .lock-actions { width: 100%; }
+  .lock-actions .btn { flex: 1; }
+}
+@media print { .lock-bar { display: none !important; } }

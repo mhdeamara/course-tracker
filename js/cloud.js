@@ -10,6 +10,7 @@
 (function (CT) {
   'use strict';
   const { u, ui } = CT;
+  const G = CT.guard; // read-only lock for data this app version must not save over (schema-guard.js)
   const C = {};
   CT.cloud = C;
 
@@ -115,13 +116,19 @@
   C.signIn = async (email, password) => {
     const s = await http('/auth/v1/token?grant_type=password', { method: 'POST', body: { email, password } });
     storeSession(s);
+    if (G.info && G.info.source === 'cloud' && G.info.uid !== auth.user.id) { location.reload(); return; } // another account's lock
     meta = readLS(META_KEY) || { version: null, dirty: false };
     await C.syncNow({ firstLogin: true });
   };
 
   C.signUp = async (email, password) => {
     const r = await http('/auth/v1/signup', { method: 'POST', body: { email, password } });
-    if (r && r.access_token) { storeSession(r); await C.syncNow({ firstLogin: true }); return 'signed-in'; }
+    if (r && r.access_token) {
+      storeSession(r);
+      if (G.info && G.info.source === 'cloud' && G.info.uid !== auth.user.id) { location.reload(); return 'signed-in'; }
+      await C.syncNow({ firstLogin: true });
+      return 'signed-in';
+    }
     return 'confirm-email';
   };
 
@@ -131,6 +138,9 @@
     meta = { version: null, dirty: false };
     saveMeta();
     setStatus(C.enabled ? 'signed-out' : 'off');
+    // the screen shows this account's cloud copy (read-only lock): reload so none of it stays visible to whoever
+    // signs in next. Its kept copies stay under its own key and come back only when it signs in again.
+    if (G.info && G.info.source === 'cloud') location.reload();
   }
   /* ---------------- Moodle calendar link ----------------
    * The link lives only in Supabase Vault (encrypted), reached through owner-only SQL functions (supabase/moodle.sql).
@@ -164,8 +174,25 @@
     return rows && rows[0] ? rows[0] : null;
   };
 
+  /** The cloud row was saved by a newer app version (or its schema version is malformed): read-only.
+   *  Nothing local is overwritten and `meta` stays as it was (so nothing is pushed, and unsynced edits stay "dirty");
+   *  the row as received and any unsynced local data are kept for this account (schema-guard.js). */
+  function lockFromRemote(row, cls) {
+    clearTimeout(pushTimer);
+    let local = null;
+    if (meta.dirty) { try { local = localStorage.getItem('ct.data.v1'); } catch (e) { /* kept in ct.data.v1 anyway */ } }
+    G.lock({ reason: cls, found: G.found(row.data), source: 'cloud', uid: auth.user.id },
+      { remote: { data: row.data, version: row.version, updated_at: row.updated_at }, local });
+    CT.store.state = G.display(row.data);
+    setStatus('locked');
+    CT.store.emit();
+  }
+  const rowCls = (row) => CT.model.classify(row && row.data);
+
   /** Replace local data with the cloud copy (no undo across devices). */
   function applyRemote(row) {
+    const cls = rowCls(row);
+    if (cls !== 'ok') { lockFromRemote(row, cls); return; }
     CT.store.state = CT.model.migrate(row.data);
     CT.store.undoStack = [];
     CT.store.persist(true);
@@ -174,26 +201,72 @@
     CT.store.emit();
   }
 
-  async function insertRemote() {
-    const rows = await api(`/rest/v1/${TABLE}`, {
-      method: 'POST', body: { user_id: auth.user.id, data: CT.store.state, version: 1 },
+  /**
+   * Save the local state. expected = the cloud version this device last saw (null → first save, insert).
+   * Returns the new cloud version, or null on a conflict (the cloud changed, or a row already exists).
+   * Goes through public.ct_save (supabase/schema-guard.sql), which tells the server which schema this app supports.
+   * The old direct write is used only when the server says that function does not exist (PGRST202) — never after
+   * an auth, conflict, compatibility or network error.
+   */
+  let rpc = 'unknown'; // 'yes' | 'missing'
+  const lockedErr = () => Object.assign(new Error('read-only'), { locked: true });
+  async function save(expected) {
+    if (G.locked()) throw lockedErr(); // write boundary
+    if (rpc !== 'missing') {
+      try {
+        const v = await api('/rest/v1/rpc/ct_save', {
+          method: 'POST', body: { p_data: CT.store.state, p_expected: expected, p_writer: CT.model.VERSION },
+        });
+        rpc = 'yes';
+        return v == null ? null : Number(v);
+      } catch (e) {
+        if (!(e.status === 404 && e.code === 'PGRST202')) throw e;
+        rpc = 'missing';
+        console.warn('ct_save is not installed (supabase/schema-guard.sql): using the direct write, without the server check');
+      }
+    }
+    if (G.locked()) throw lockedErr();
+    if (expected == null) {
+      const rows = await api(`/rest/v1/${TABLE}`, {
+        method: 'POST', body: { user_id: auth.user.id, data: CT.store.state, version: 1 },
+        headers: { Prefer: 'return=representation' },
+      });
+      return rows && rows[0] ? rows[0].version : null;
+    }
+    const rows = await api(`/rest/v1/${TABLE}?user_id=eq.${auth.user.id}&version=eq.${expected}`, {
+      method: 'PATCH', body: { data: CT.store.state, version: expected + 1, updated_at: new Date().toISOString() },
       headers: { Prefer: 'return=representation' },
     });
-    meta = { version: rows[0].version, dirty: false };
+    return rows && rows.length ? rows[0].version : null;
+  }
+
+  /** First save of this account. Returns false when a row appeared meanwhile (→ conflict). */
+  async function insertRemote() {
+    const v = await save(null);
+    if (v == null) return false;
+    meta = { version: v, dirty: false };
     saveMeta();
+    return true;
   }
 
   /** Push local state if the cloud still has the version we last saw. Returns false on conflict. */
   async function pushRemote() {
-    const next = (meta.version || 0) + 1;
-    const rows = await api(`/rest/v1/${TABLE}?user_id=eq.${auth.user.id}&version=eq.${meta.version}`, {
-      method: 'PATCH', body: { data: CT.store.state, version: next, updated_at: new Date().toISOString() },
-      headers: { Prefer: 'return=representation' },
-    });
-    if (!rows || !rows.length) return false;
-    meta = { version: rows[0].version, dirty: false };
+    const v = await save(meta.version);
+    if (v == null) return false;
+    meta = { version: v, dirty: false };
     saveMeta();
     return true;
+  }
+
+  /** The server refused a save because of the schema (ct_schema_*): see what the cloud holds now. */
+  async function onSchemaRejected(e) {
+    try {
+      const r = await fetchRemote();
+      const cls = rowCls(r);
+      if (r && cls !== 'ok') { lockFromRemote(r, cls); return; }
+    } catch (e2) { /* report the original refusal below */ }
+    setStatus('error', 'השרת סירב לשמור בגלל גרסת הנתונים. הנתונים במכשיר לא נמחקו.');
+    console.warn('save refused by the server', e && e.message);
   }
 
   /** Main sync step: reconcile local and cloud. */
@@ -205,13 +278,18 @@
   C.syncNow = async ({ firstLogin = false } = {}) => {
     const pristine = C.isEmpty(CT.store.state);
     if (!C.enabled || !C.signedIn() || pushing || conflictOpen) return;
+    if (G.locked()) { setStatus('locked'); return; }
     if (!navigator.onLine) { setStatus('offline'); return; }
     pushing = true;
     setStatus('syncing');
     try {
       const remote = await fetchRemote();
-      if (!remote) {
-        await insertRemote(); // first device: upload what we have
+      const cls = rowCls(remote);
+      if (remote && cls !== 'ok') {
+        lockFromRemote(remote, cls); // before any branch: never merge, apply or push over it
+      } else if (!remote) {
+        // first device: upload what we have (a row that appeared meanwhile → conflict)
+        if (!(await insertRemote())) await resolveConflict(await fetchRemote(), 'conflict');
       } else if (meta.version == null) {
         // this device never synced: keep cloud unless the user has real local work to keep
         if (pristine) applyRemote(remote);
@@ -224,9 +302,12 @@
         await resolveConflict(remote, 'conflict');
       }
       if (C.status === 'syncing') setStatus('synced'); // a conflict dialog sets its own result
+      if (C.status === 'synced' && !meta.dirty) G.cleanup(auth && auth.user && auth.user.id);
     } catch (e) {
       console.warn('sync failed', e);
-      if (e instanceof TypeError) setStatus('offline');
+      if (e.locked) setStatus('locked');
+      else if (/^ct_schema_/.test(String(e.message || ''))) await onSchemaRejected(e);
+      else if (e instanceof TypeError) setStatus('offline');
       else if (e.status === 401) setStatus('signed-out', 'פג תוקף ההתחברות — התחבר שוב');
       else setStatus('error', heMsg(e));
     } finally {
@@ -237,6 +318,8 @@
   /** Both sides changed (or first login on a device with data): let the user choose. */
   function resolveConflict(remote, kind) {
     if (!remote) return Promise.resolve();
+    const rc = rowCls(remote);
+    if (rc !== 'ok') { lockFromRemote(remote, rc); return Promise.resolve(); } // no "keep this device" over newer data
     conflictOpen = true;
     setStatus('conflict');
     const count = (st) => {
@@ -252,6 +335,7 @@
         if (done) return;
         done = true;
         conflictOpen = false;
+        if (G.locked()) { setStatus('locked'); resolve(); return; } // locked while the dialog was open
         try {
           if (choice === 'cloud' && remoteState) {
             const hadWork = !C.isEmpty(CT.store.state);
@@ -259,14 +343,23 @@
             applyRemote(remote);
             ui.toast(hadWork ? 'נטענו הנתונים מהענן. עותק של נתוני המכשיר נשמר בהורדות.' : 'נטענו הנתונים מהענן');
           } else {
-            meta.version = remote.version;
+            // write boundary: the cloud may have changed while the dialog was open — check it again first
+            const fresh = await fetchRemote();
+            const fc = rowCls(fresh);
+            if (fresh && fc !== 'ok') { lockFromRemote(fresh, fc); resolve(); return; }
+            if (fresh && fresh.version !== remote.version) { setStatus('error', 'הענן השתנה שוב — נסה "סנכרן עכשיו"'); resolve(); return; }
             meta.dirty = true;
-            const ok = await pushRemote();
+            let ok;
+            if (fresh) { meta.version = fresh.version; ok = await pushRemote(); } else ok = await insertRemote();
             if (!ok) { setStatus('error', 'הענן השתנה שוב — נסה "סנכרן עכשיו"'); resolve(); return; }
             ui.toast('הנתונים מהמכשיר הזה נשמרו בענן');
           }
-          setStatus('synced');
-        } catch (e) { setStatus('error', heMsg(e)); }
+          if (!G.locked()) setStatus('synced');
+        } catch (e) {
+          if (e.locked) setStatus('locked');
+          else if (/^ct_schema_/.test(String(e.message || ''))) await onSchemaRejected(e);
+          else setStatus('error', heMsg(e));
+        }
         resolve();
       };
       ui.modal({
@@ -301,7 +394,7 @@
 
   /** Called by the store after every local change. */
   C.onLocalChange = () => {
-    if (!C.enabled || !C.signedIn()) return;
+    if (!C.enabled || !C.signedIn() || G.locked()) return;
     meta.dirty = true;
     saveMeta();
     if (C.status !== 'conflict') setStatus(navigator.onLine ? 'syncing' : 'offline');
@@ -309,9 +402,12 @@
     pushTimer = setTimeout(() => C.syncNow(), 1500);
   };
 
+  /** Read-only lock: drop a push that is waiting for its 1.5 s delay (save() re-checks the lock anyway). */
+  C.cancelPending = () => { clearTimeout(pushTimer); pushTimer = null; };
+
   /** Lightweight check for changes made on another device. */
   async function poll() {
-    if (!C.signedIn() || pushing || conflictOpen || document.hidden || meta.dirty) return;
+    if (!C.signedIn() || pushing || conflictOpen || document.hidden || meta.dirty || G.locked()) return;
     if (!navigator.onLine) { setStatus('offline'); return; }
     try {
       const r = await fetchRemote('version');
@@ -346,5 +442,6 @@
     offline: ['warn', 'אין אינטרנט — יסונכרן אחר כך'],
     error: ['bad', 'שגיאת סנכרון'],
     conflict: ['bad', 'צריך לבחור גרסה'],
+    locked: ['bad', G.info && G.info.reason === 'malformed' ? 'גרסת הנתונים לא תקינה' : 'נדרש עדכון גרסה'],
   }[C.status] || ['', C.status]);
 })(window.CT);
