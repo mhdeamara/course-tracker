@@ -37,6 +37,11 @@ Use targeted search and line ranges; don't scan the repo or dump whole files.
 ## UI
 Preserve light and dark themes, existing CSS variables and components. Mobile first; keyboard access and ARIA. No redesign of unrelated pages; navigation changes must keep every feature reachable.
 
+### Original product identity
+- Other products (e.g. EI-Community) are references for general principles only (simplicity, clarity, spacing, hierarchy). Never copy their layout, branding, course artwork, typography, navigation styling or distinctive patterns.
+- Keep one consistent design language of our own across components, cards, colors, iconography and proportions, built around our workflows (academic tracking, progress, gamification, AI). Difference must not come from color changes alone.
+- Course illustrations are original and generated locally. The approved prototype is a functional/structural reference, not a fixed visual spec; refine the identity as each stage touches the UI, without reopening finished stages.
+
 ### Languages (i18n)
 - All new or changed UI text goes through `CT.i18n` keys in `js/i18n.js`, with Hebrew and English in the same change (same keys, same `{params}`; `tests/i18n.test.js` checks). No hard-coded UI strings.
 - `t()` returns HTML-escaped text (dictionary text and params) for templates and attributes; `tx()` returns plain text for `textContent`, `setAttribute`, toasts and `Error` messages. Plurals are `{ one, two?, other }` objects with `{n}`.

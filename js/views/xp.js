@@ -400,44 +400,36 @@
     });
   }
 
-  /* ---------- home screen notices: pause, "at risk", deductions (always gentle) ---------- */
+  /* ---------- notices for the notification center (js/notify.js): pause, "at risk", deductions (always gentle) ---------- */
   const SEEN_KEY = 'ct.penSeen';
   const seenPen = () => { try { return localStorage.getItem(SEEN_KEY) || ''; } catch (e) { return ''; } };
   const nextItem = () => { const a = CT.stats.nextActions(S.activeCourses())[0]; return a ? a.item : null; };
 
-  V.noticeHTML = () => {
-    if (!on() || !S.state.game) return '';
-    const st = S.state, gm = st.game, now = new Date();
+  /** Data only (the center renders and translates it): null | pause | pen | risk. Same rules as the old home banner. */
+  V.noticeData = (now = new Date()) => {
+    if (!on() || !S.state.game) return null;
+    const st = S.state, gm = st.game;
     const pause = G.activePause(gm);
-    if (pause) {
-      return `<div class="banner banner-info game-note" role="status"><span>⏸️ מצב השהיה${pause.reason ? ` · ${esc(G.PAUSE_REASONS[pause.reason] || '')}` : ''}${pause.to ? ` עד ${u.fmtDateFull(pause.to)}` : ''} — בלי ניכויים, והרצף מחכה לך.</span>
-        <span class="banner-actions"><button class="btn btn-small" data-game-act="resume">חזרה לשגרה</button></span></div>`;
-    }
+    if (pause) return { type: 'pause', reason: pause.reason || '', from: pause.from || '', to: pause.to || '' };
     const pens = gm.ledger.filter((e) => e.t === 'pen');
     const unseen = pens.slice(pens.findIndex((x) => x.id === seenPen()) + 1).filter((e) => e.d >= u.addDays(G.dayKey(), -7));
     const lastPen = unseen[unseen.length - 1];
-    if (lastPen) {
-      const sum = -u.sum(unseen, (e) => e.p);
-      return `<div class="banner banner-warn game-note" role="status"><span>${unseen.length > 1 ? `ב-${unseen.length} ימים` : `ב${dayTitle(lastPen.d) === 'אתמול' ? 'אתמול' : `-${u.fmtDate(lastPen.d)}`}`} לא הגעת למינימום, וירדו ${fmt(sum)} נקודות מהיתרה. הרמה וההישגים לא נפגעים — היום מתחילים מחדש 💪</span>
-        <span class="banner-actions"><a class="btn btn-small btn-ghost" href="#/xp?tab=log">למה?</a><button class="btn btn-small" data-game-act="pen-seen" data-id="${esc(lastPen.id)}">הבנתי</button></span></div>`;
-    }
+    if (lastPen) return { type: 'pen', count: unseen.length, points: fmt(-u.sum(unseen, (e) => e.p)), lastId: lastPen.id, day: lastPen.d };
     const risk = now.getHours() >= 16 || now.getHours() < G.DAY_START_HOUR ? G.atRisk(st, now) : null;
     if (risk) {
       const it = nextItem();
-      const text = risk.penOn
-        ? `עוד לא הגעת למינימום של היום (${risk.need.minItems === 1 ? 'פריט אחד' : `${risk.need.minItems} פריטים`} או ${risk.need.minMinutes} דקות). חמש דקות מספיקות כדי להתחיל${risk.freezesLeft ? ` · נשארו ${risk.freezesLeft} הקפאות החודש` : ''}.`
-        : `רצף של ${risk.streak} ימים מחכה לך היום. משהו קטן מספיק כדי לשמור עליו.`;
-      return `<div class="banner banner-info game-note" role="status"><span>${risk.penOn ? '⏳' : '🔥'} ${text}</span>
-        ${it && CT.focus ? `<span class="banner-actions"><button class="btn btn-small btn-primary" data-game-act="five" data-id="${esc(it.id)}">רק 5 דקות</button></span>` : ''}</div>`;
+      return { type: 'risk', penOn: !!risk.penOn, minItems: risk.need ? risk.need.minItems : 0, minMinutes: risk.need ? risk.need.minMinutes : 0,
+        freezesLeft: risk.freezesLeft || 0, streak: risk.streak || 0, day: G.dayKey(now), itemId: it && CT.focus ? it.id : '' };
     }
-    return '';
+    return null;
   };
-  if (CT.views.dashboard) CT.views.dashboard.slots.top.push(V.noticeHTML);
+  /** "הבנתי" on a deduction notice: device-local, like before. */
+  V.penSeen = (id) => { try { localStorage.setItem(SEEN_KEY, id); } catch (_) { /* ignore */ } };
   document.addEventListener('click', (e) => {
     const a = e.target.closest('[data-game-act]');
     if (!a) return;
     const act = a.dataset.gameAct;
-    if (act === 'pen-seen') { try { localStorage.setItem(SEEN_KEY, a.dataset.id); } catch (_) { /* ignore */ } CT.app.rerender(); }
+    if (act === 'pen-seen') { V.penSeen(a.dataset.id); CT.app.rerender(); }
     if (act === 'resume') S.commit('חזרה מהשהיה', (st) => G.resume(st));
     if (act === 'five' && CT.focus) CT.focus.start(a.dataset.id, 5);
     if (act === 'pause') {

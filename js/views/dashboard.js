@@ -173,44 +173,17 @@
       </div>`);
   }
 
-  /** Notices (sync, Moodle, backup): the first one is shown, the rest fold under "עוד". */
+  /** On-screen notices: only the critical ones (a sync conflict). Everything else is in the notification center. */
   function noticesHTML(list) {
-    if (!list.length) return '';
-    if (list.length === 1) return `<div class="notices">${list[0]}</div>`;
-    return `<div class="notices">${list[0]}<details class="notices-more"><summary>עוד ${list.length - 1 === 1 ? 'הודעה אחת' : `${list.length - 1} הודעות`}</summary>${list.slice(1).join('')}</details></div>`;
+    return list.length ? `<div class="notices">${list.join('')}</div>` : '';
   }
 
   function bannersHTML() {
-    const b = CT.backup;
-    const out = [];
     const C = CT.cloud;
+    const out = [];
     if (C && C.status === 'conflict') {
       out.push(`<div class="banner banner-warn" role="status">⚠️ הנתונים השתנו בשני מכשירים ועדיין לא נבחרה גרסה.
         <button class="btn btn-small btn-primary" data-action="sync-now">פתור עכשיו</button></div>`);
-    }
-    if (CT.views.moodle && CT.views.moodle.bannerHTML) { const mb = CT.views.moodle.bannerHTML(); if (mb) out.push(mb); }
-    const inboxN = S.state.moodle && S.state.moodle.inbox ? S.state.moodle.inbox.length : 0;
-    const linkErr = S.state.moodle && S.state.moodle.linkError;
-    if (linkErr) {
-      out.push(`<div class="banner banner-warn" role="status">⚠️ סנכרון המטלות ממודל נכשל: ${u.esc(linkErr.message)}
-        <a class="btn btn-small btn-primary" href="#/settings">להגדרות</a></div>`);
-    }
-    if (inboxN) {
-      out.push(`<div class="banner banner-info" role="status">📥 ${inboxN === 1 ? 'מטלה אחת ממודל מחכה' : `${inboxN} מטלות ממודל מחכות`} לשיוך לקורס.
-        <button class="btn btn-small btn-primary" data-action="moodle-inbox">לשיוך</button></div>`);
-    }
-    if (b.status === 'needs-permission') {
-      out.push(`<div class="banner banner-info" role="status">💾 השמירה האוטומטית לקובץ ממתינה לאישור הדפדפן.
-        <button class="btn btn-small btn-primary" data-action="regrant">אשר גישה לקובץ</button></div>`);
-    } else if (b.needsReminder()) {
-      const d = b.daysSinceBackup();
-      out.push(`<div class="banner banner-warn" role="status">🗂️ ${d == null ? 'עוד לא גיבית את הנתונים.' : `עברו ${d} ימים מאז הגיבוי האחרון.`} כדאי לייצא גיבוי (לוקח שנייה).
-        <span class="banner-actions"><button class="btn btn-small btn-primary" data-action="export">ייצא גיבוי</button>
-        <button class="btn btn-small btn-ghost" data-action="snooze">אחר כך</button></span></div>`);
-    }
-    if (C && C.enabled && !C.signedIn() && C.status !== 'conflict') {
-      out.push(`<div class="banner banner-info" role="status">☁️ התחבר כדי לסנכרן בין המחשב לטלפון.
-        <a class="btn btn-small btn-primary" href="#/settings">להתחברות</a></div>`);
     }
     return out;
   }
@@ -269,12 +242,7 @@
       case 'next-five': if (CT.focus) CT.focus.start(a.dataset.id, 5); break;
       case 'urgent-all': urgentAll = !urgentAll; CT.app.rerender(); break;
       case 'new-course': CT.views.course.courseForm(); break;
-      case 'export': CT.backup.exportFile(); break;
-      case 'snooze': CT.backup.snooze(); break;
-      case 'regrant': CT.backup.regrant(); break;
       case 'sync-now': CT.cloud.syncNow(); break;
-      case 'moodle-inbox': CT.views.moodle.showInbox(); break;
-      case 'moodle-seen': CT.views.moodle.markSeen(); break;
       default: break;
     }
   }

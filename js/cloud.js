@@ -45,6 +45,7 @@
 
   C.email = () => (auth && auth.user && auth.user.email) || '';
   C.signedIn = () => !!(auth && auth.access_token);
+  C.userId = () => (auth && auth.user && auth.user.id) || '';
 
   /* ---------------- HTTP helpers ---------------- */
   async function http(path, { method = 'GET', body, token, headers = {} } = {}) {

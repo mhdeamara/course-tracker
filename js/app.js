@@ -118,6 +118,7 @@
     if (app.lastRoute === location.hash && !params.item) window.scrollTo(0, scrollY);
     app.lastRoute = location.hash;
     if (CT.timer) CT.timer.renderChip();
+    if (CT.views.notifications) CT.views.notifications.refresh();
   };
 
   window.addEventListener('hashchange', () => {
@@ -237,7 +238,7 @@
           <button type="button" class="icon-btn hd-search" id="search-btn" aria-label="${tt('hd.searchBtn')}">${icon.search}</button>
           <span id="timer-slot"></span>
           <span id="xp-slot" class="xp-slot"></span>
-          <button type="button" class="icon-btn" id="bell-btn" aria-label="${tt('hd.bell')}" title="${tt('hd.bellTitle')}">${icon.bell}</button>
+          <button type="button" class="icon-btn" id="bell-btn" aria-label="${tt('notif.bell')}" title="${tt('notif.bell')}" aria-haspopup="dialog" aria-expanded="false">${icon.bell}</button>
           <button type="button" class="icon-btn hd-wide" id="undo-btn" aria-label="${tt('hd.undo')}" title="${tt('hd.undoTitle')}">${icon.undo}</button>
           <button type="button" class="icon-btn hd-wide" id="help-btn" aria-label="${tt('hd.help')}" title="${tt('hd.help')}">${icon.keyboard}</button>
           <button type="button" class="icon-btn hd-wide" id="theme-btn"></button>
@@ -249,13 +250,7 @@
     document.getElementById('undo-btn').onclick = S.undo;
     document.getElementById('help-btn').onclick = app.showHelp;
     document.getElementById('search-btn').onclick = app.openSearch;
-    // notices still live on the "היום" page until the notification center (stage C)
-    document.getElementById('bell-btn').onclick = () => {
-      if (parseHash().route !== '') { location.hash = '#/'; return; }
-      const n = document.querySelector('#main .banner');
-      if (n) n.scrollIntoView({ block: 'center', behavior: app.reducedMotion() ? 'auto' : 'smooth' });
-      else ui.toast(tx('hd.noNotices'));
-    };
+    document.getElementById('bell-btn').onclick = () => CT.views.notifications.toggle();
     const more = document.getElementById('more-btn');
     more.onclick = () => ui.menu(more, [
       { label: tx('nav.settings'), icon: 'gear', fn: () => { location.hash = '#/settings'; } },
@@ -369,7 +364,7 @@
       if (typing) return; // native undo inside text fields
       e.preventDefault(); S.undo(); return;
     }
-    if (typing || e.ctrlKey || e.metaKey || document.querySelector('.modal-backdrop') || document.body.classList.contains('adk-open')) return;
+    if (typing || e.ctrlKey || e.metaKey || document.querySelector('.modal-backdrop, .nc-layer') || document.body.classList.contains('adk-open')) return;
     const { route } = parseHash();
     if (Date.now() - gPending < 1200) {
       const dest = { d: '', 'ג': '', s: 'schedule', 'ד': 'schedule', r: 'review', 'ר': 'review', t: 'stats', 'א': 'stats' }[e.key];
@@ -449,6 +444,7 @@
     paintSyncDot();
     renderLockBar();
     if (CT.timer) CT.timer.renderChip();
+    if (CT.views.notifications) CT.views.notifications.refresh();
   }
 
   /* ---------- boot ---------- */

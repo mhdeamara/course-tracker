@@ -421,14 +421,7 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(false); });
   };
 
-  /** Dashboard banner: unseen changes from Moodle. */
-  V.bannerHTML = () => {
-    const n = Mo.unseen(S.state);
-    if (!n.total) return '';
-    return `<div class="banner banner-info" role="status">📥 ממודל: ${esc(Mo.unseenText(n))}.
-      <a class="btn btn-small btn-primary" href="#/moodle">מה השתנה</a>
-      <button class="btn btn-small btn-ghost" data-action="moodle-seen">ראיתי</button></div>`;
-  };
+  /** "ראיתי" on the Moodle notification (notification center) and on the Moodle page. */
   V.markSeen = () => S.commit('', (st) => Mo.markSeen(st), { undo: false });
 
   /** "טווח הקישור" notice (settings + the page). */
