@@ -6,19 +6,20 @@
   const esc = u.esc, icon = u.icon;
   const app = {};
   CT.app = app;
+  const I18N = CT.i18n, tt = I18N.t, tx = I18N.tx; // tt → HTML-safe, tx → plain text
 
   /* Four primary destinations (sidebar / icon rail / bottom bar). Every old route belongs to one of them;
    * `subs` is the secondary navigation shown under the destination (sidebar) or as a strip (rail, phone).
    * "קורסים" opens the active semester's course list (#/courses) and "AI" opens the existing chat panel
-   * until their dedicated pages arrive (stages D, E). */
+   * until their dedicated pages arrive (stages D, E). Labels are i18n keys. */
   const DESTS = [
-    { id: 'today', label: 'היום', icon: 'sun', href: '#/', routes: ['', 'schedule', 'xp', 'adhkar'],
-      subs: [['', 'סקירה'], ['schedule', 'מערכת שעות'], ['xp', 'נקודות ויעדים'], ['adhkar', 'אזכרות']] },
-    { id: 'courses', label: 'קורסים', icon: 'book', href: '#/courses', routes: ['courses', 'course', 'moodle', 'review', 'archive'],
-      subs: [['courses', 'הקורסים שלי'], ['moodle', 'המודל שלי'], ['review', 'חזרה למבחן'], ['archive', 'ארכיון']] },
-    { id: 'degree', label: 'התואר', icon: 'cap', href: '#/grades', routes: ['grades', 'catalog', 'semesters', 'stats'],
-      subs: [['grades', 'ממוצע וציונים'], ['catalog', 'תכנית לימודים'], ['semesters', 'סמסטרים'], ['stats', 'סטטיסטיקות']] },
-    { id: 'ai', label: 'AI', icon: 'spark', action: 'ai', routes: [], subs: [] },
+    { id: 'today', label: 'dest.today', icon: 'sun', href: '#/', routes: ['', 'schedule', 'xp', 'adhkar'],
+      subs: [['', 'sub.overview'], ['schedule', 'sub.schedule'], ['xp', 'sub.xp'], ['adhkar', 'sub.adhkar']] },
+    { id: 'courses', label: 'dest.courses', icon: 'book', href: '#/courses', routes: ['courses', 'course', 'moodle', 'review', 'archive'],
+      subs: [['courses', 'sub.courses'], ['moodle', 'sub.moodle'], ['review', 'sub.review'], ['archive', 'sub.archive']] },
+    { id: 'degree', label: 'dest.degree', icon: 'cap', href: '#/grades', routes: ['grades', 'catalog', 'semesters', 'stats'],
+      subs: [['grades', 'sub.grades'], ['catalog', 'sub.catalog'], ['semesters', 'sub.semesters'], ['stats', 'sub.stats']] },
+    { id: 'ai', label: 'dest.ai', icon: 'spark', action: 'ai', routes: [], subs: [] },
   ];
   const destOf = (route) => DESTS.find((d) => d.routes.includes(route)) || null;
   const subShown = ([r]) => r === '' || r === 'courses' || (r === 'xp' ? !!(CT.views.xp && CT.views.xp.chipHTML()) : navShown([r]));
@@ -48,7 +49,7 @@
     const meta = document.querySelector('meta[name="theme-color"]'); // browser/OS bar follows the in-app theme (= --bg)
     if (meta) meta.setAttribute('content', isDark() ? '#090b0f' : '#f5f6f8');
     const btn = document.getElementById('theme-btn');
-    if (btn) { btn.innerHTML = isDark() ? icon.sun : icon.moon; btn.setAttribute('aria-label', isDark() ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'); }
+    if (btn) { btn.innerHTML = isDark() ? icon.sun : icon.moon; btn.setAttribute('aria-label', tx(isDark() ? 'hd.toLight' : 'hd.toDark')); }
   }
 
   /* ---------- motion and sound (per device, like the theme) ---------- */
@@ -110,6 +111,7 @@
       clearTimeout(app.routeTimer); app.routeTimer = setTimeout(() => main.classList.remove('route-in'), 600);
     }
     const navRoute = fn === map[''] ? '' : route; // unknown routes show the home page, so "היום" is current
+    app.navRoute = navRoute;
     renderNav(navRoute);
     renderSidebar(navRoute);
     paintSyncDot();
@@ -140,7 +142,7 @@
     if (!dot || !CT.cloud) return;
     const [cls, text] = CT.cloud.label();
     dot.className = `sync-dot ${cls || 'warn'}`;
-    dot.title = `סנכרון: ${text}`;
+    dot.title = tx('hd.syncStatus', { status: text });
     dot.setAttribute('aria-label', dot.title);
   };
   /** Called by cloud.js whenever the sync status changes. */
@@ -156,18 +158,19 @@
   const backupLine = () => {
     const b = CT.backup;
     const days = b.daysSinceBackup();
-    const [cls, text] = b.status === 'granted' ? ['ok', 'שמירה אוטומטית פעילה']
-      : b.status === 'needs-permission' ? ['warn', 'שמירה אוטומטית ממתינה לאישור']
-        : days == null ? ['warn', 'עוד לא גובה']
-          : [days > 7 ? 'warn' : 'ok', `גיבוי אחרון ${days === 0 ? 'היום' : days === 1 ? 'אתמול' : `לפני ${days} ימים`}`];
+    const [cls, text] = b.status === 'granted' ? ['ok', tt('backup.auto')]
+      : b.status === 'needs-permission' ? ['warn', tt('backup.pending')]
+        : days == null ? ['warn', tt('backup.never')]
+          : [days > 7 ? 'warn' : 'ok', days === 0 ? tt('backup.today') : days === 1 ? tt('backup.yesterday') : tt('backup.days', { n: days })];
     return `<span class="sb-dot ${cls}"></span><span class="sb-label">${text}</span>`;
   };
   const destLink = (d, cur, cls) => {
     const on = cur === d;
-    const inner = `${icon[d.icon]}<span class="${cls}-label">${d.label}</span>`;
+    const label = tt(d.label);
+    const inner = `${icon[d.icon]}<span class="${cls}-label">${label}</span>`;
     return d.action
-      ? `<button type="button" class="${cls}-item" data-dest="${d.id}" aria-haspopup="dialog" title="${d.label}">${inner}</button>`
-      : `<a href="${d.href}" class="${cls}-item${on ? ' active' : ''}" data-dest="${d.id}" title="${d.label}"${on ? ' aria-current="true"' : ''}>${inner}</a>`;
+      ? `<button type="button" class="${cls}-item" data-dest="${d.id}" aria-haspopup="dialog" title="${label}">${inner}</button>`
+      : `<a href="${d.href}" class="${cls}-item${on ? ' active' : ''}" data-dest="${d.id}" title="${label}"${on ? ' aria-current="true"' : ''}>${inner}</a>`;
   };
   const onDest = (e) => {
     const b = e.target.closest('[data-dest="ai"]');
@@ -179,16 +182,17 @@
     const sb = document.getElementById('sidebar');
     const cur = destOf(route);
     const rail = app.sidebar() === 'rail';
+    const name = tt('app.name'), toggle = tt(rail ? 'nav.expand' : 'nav.collapse'), settings = tt('nav.settings');
     sb.innerHTML = `
       <div class="sb-top">
-        <a href="#/" class="sb-brand" title="הקורסים שלי"><span class="sb-logo" aria-hidden="true">${icon.check}</span><span class="sb-label">הקורסים שלי</span></a>
-        <button type="button" class="icon-btn sb-toggle" id="sb-toggle" aria-controls="sidebar" aria-expanded="${!rail}" aria-label="${rail ? 'הרחבת התפריט' : 'כיווץ התפריט'}" title="${rail ? 'הרחבת התפריט' : 'כיווץ התפריט'}">${icon.sidebar}</button>
+        <a href="#/" class="sb-brand" title="${name}"><span class="sb-logo" aria-hidden="true">${icon.check}</span><span class="sb-label">${name}</span></a>
+        <button type="button" class="icon-btn sb-toggle" id="sb-toggle" aria-controls="sidebar" aria-expanded="${!rail}" aria-label="${toggle}" title="${toggle}">${icon.sidebar}</button>
       </div>
-      <nav class="sb-nav" aria-label="ניווט ראשי">
-        ${DESTS.map((d) => destLink(d, cur, 'sb') + (cur === d && d.subs.length ? `<div class="sb-sub">${d.subs.filter(subShown).map(([r, l]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}"${route === r ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</div>` : '')).join('')}
+      <nav class="sb-nav" aria-label="${tt('nav.main')}">
+        ${DESTS.map((d) => destLink(d, cur, 'sb') + (cur === d && d.subs.length ? `<div class="sb-sub">${d.subs.filter(subShown).map(([r, l]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}"${route === r ? ' aria-current="page"' : ''}>${tt(l)}</a>`).join('')}</div>` : '')).join('')}
       </nav>
       <div class="sb-bottom">
-        <a href="#/settings" class="sb-item${route === 'settings' ? ' active' : ''}" title="הגדרות"${route === 'settings' ? ' aria-current="page"' : ''}>${icon.gear}<span class="sb-label">הגדרות</span></a>
+        <a href="#/settings" class="sb-item${route === 'settings' ? ' active' : ''}" title="${settings}"${route === 'settings' ? ' aria-current="page"' : ''}>${icon.gear}<span class="sb-label">${settings}</span></a>
         <a href="#/settings" class="sb-foot" id="sb-foot">${CT.cloud && CT.cloud.enabled ? syncLine() : backupLine()}</a>
       </div>`;
     sb.querySelector('#sb-toggle').onclick = () => app.setSidebar(rail ? 'full' : 'rail');
@@ -202,12 +206,12 @@
     if (sub) {
       const list = cur ? cur.subs.filter(subShown) : [];
       sub.hidden = list.length < 2;
-      sub.innerHTML = list.map(([r, l]) => `<a href="#/${r}" data-route="${r}" class="${route === r ? 'active' : ''}"${route === r ? ' aria-current="page"' : ''}>${l}</a>`).join('');
+      sub.innerHTML = list.map(([r, l]) => `<a href="#/${r}" data-route="${r}" class="${route === r ? 'active' : ''}"${route === r ? ' aria-current="page"' : ''}>${tt(l)}</a>`).join('');
     }
     const bn = document.getElementById('bottom-nav');
     if (bn) { bn.innerHTML = DESTS.map((d) => destLink(d, cur, 'bn')).join(''); bn.onclick = onDest; }
     const t = document.getElementById('hd-title');
-    if (t) t.textContent = route === 'settings' ? 'הגדרות' : cur ? cur.label : '';
+    if (t) t.textContent = route === 'settings' ? tx('nav.settings') : cur ? tx(cur.label) : '';
     const xp = document.getElementById('xp-slot');
     if (xp) xp.innerHTML = CT.views.xp ? CT.views.xp.chipHTML() : '';
   }
@@ -224,23 +228,23 @@
         <span class="hd-title" id="hd-title"></span>
         <div class="search" role="search">
           ${icon.search}
-          <input id="search" type="search" dir="auto" placeholder="חיפוש בקורסים, פריטים והערות…" aria-label="חיפוש גלובלי (קיצור: /)" autocomplete="off">
+          <input id="search" type="search" dir="auto" placeholder="${tt('hd.searchPh')}" aria-label="${tt('hd.searchLabel')}" autocomplete="off">
           <kbd class="search-kbd">/</kbd>
           <div class="search-results" id="search-results" role="listbox" hidden></div>
         </div>
         <div class="header-actions">
-          ${CT.cloud && CT.cloud.enabled ? '<a href="#/settings" id="sync-dot" class="sync-dot warn" aria-label="סנכרון"></a>' : ''}
-          <button type="button" class="icon-btn hd-search" id="search-btn" aria-label="חיפוש (/)">${icon.search}</button>
+          ${CT.cloud && CT.cloud.enabled ? `<a href="#/settings" id="sync-dot" class="sync-dot warn" aria-label="${tt('hd.sync')}"></a>` : ''}
+          <button type="button" class="icon-btn hd-search" id="search-btn" aria-label="${tt('hd.searchBtn')}">${icon.search}</button>
           <span id="timer-slot"></span>
           <span id="xp-slot" class="xp-slot"></span>
-          <button type="button" class="icon-btn" id="bell-btn" aria-label="התראות והודעות (בדף היום)" title="התראות והודעות">${icon.bell}</button>
-          <button type="button" class="icon-btn hd-wide" id="undo-btn" aria-label="ביטול פעולה אחרונה (Ctrl+Z)" title="ביטול (Ctrl+Z)">${icon.undo}</button>
-          <button type="button" class="icon-btn hd-wide" id="help-btn" aria-label="קיצורי מקלדת (?)" title="קיצורי מקלדת (?)">${icon.keyboard}</button>
+          <button type="button" class="icon-btn" id="bell-btn" aria-label="${tt('hd.bell')}" title="${tt('hd.bellTitle')}">${icon.bell}</button>
+          <button type="button" class="icon-btn hd-wide" id="undo-btn" aria-label="${tt('hd.undo')}" title="${tt('hd.undoTitle')}">${icon.undo}</button>
+          <button type="button" class="icon-btn hd-wide" id="help-btn" aria-label="${tt('hd.help')}" title="${tt('hd.help')}">${icon.keyboard}</button>
           <button type="button" class="icon-btn hd-wide" id="theme-btn"></button>
-          <button type="button" class="icon-btn hd-more" id="more-btn" aria-label="עוד פעולות" aria-haspopup="menu">${icon.more}</button>
+          <button type="button" class="icon-btn hd-more" id="more-btn" aria-label="${tt('hd.more')}" aria-haspopup="menu">${icon.more}</button>
         </div>
       </div>
-      <nav class="nav subnav" id="subnav" aria-label="ניווט משני" hidden></nav>`;
+      <nav class="nav subnav" id="subnav" aria-label="${tt('nav.secondary')}" hidden></nav>`;
     document.getElementById('theme-btn').onclick = () => app.setTheme(isDark() ? 'light' : 'dark');
     document.getElementById('undo-btn').onclick = S.undo;
     document.getElementById('help-btn').onclick = app.showHelp;
@@ -250,15 +254,17 @@
       if (parseHash().route !== '') { location.hash = '#/'; return; }
       const n = document.querySelector('#main .banner');
       if (n) n.scrollIntoView({ block: 'center', behavior: app.reducedMotion() ? 'auto' : 'smooth' });
-      else ui.toast('אין התראות חדשות');
+      else ui.toast(tx('hd.noNotices'));
     };
     const more = document.getElementById('more-btn');
     more.onclick = () => ui.menu(more, [
-      { label: 'הגדרות', icon: 'gear', fn: () => { location.hash = '#/settings'; } },
-      { label: isDark() ? 'מצב בהיר' : 'מצב כהה', icon: isDark() ? 'sun' : 'moon', fn: () => app.setTheme(isDark() ? 'light' : 'dark') },
-      { label: 'ביטול פעולה אחרונה', icon: 'undo', fn: S.undo },
-      { label: 'קיצורי מקלדת', icon: 'keyboard', fn: app.showHelp },
-    ]);
+      { label: tx('nav.settings'), icon: 'gear', fn: () => { location.hash = '#/settings'; } },
+      { label: tx(isDark() ? 'menu.light' : 'menu.dark'), icon: isDark() ? 'sun' : 'moon', fn: () => app.setTheme(isDark() ? 'light' : 'dark') },
+      { label: tx('menu.undo'), icon: 'undo', fn: S.undo },
+      { label: tx('menu.shortcuts'), icon: 'keyboard', fn: app.showHelp },
+      '-',
+      { label: tx('lang.switch'), fn: () => { I18N.setLang(I18N.lang() === 'he' ? 'en' : 'he'); const b = document.getElementById('more-btn'); if (b) b.focus(); } },
+    ], { localized: true });
     bindSearch();
     applyTheme();
   }
@@ -269,9 +275,9 @@
     const nq = u.norm(q);
     const out = [];
     S.state.courses.forEach((c) => {
-      const tag = c.archived ? ' (ארכיון)' : '';
+      const tag = c.archived ? ' ' + tx('search.archived') : '';
       if (u.norm(`${c.name} ${c.number} ${c.staff} ${c.description}`).includes(nq)) {
-        out.push({ kind: 'קורס', title: c.name + tag, sub: c.number, href: `#/course/${c.id}`, color: c.color });
+        out.push({ kind: 'search.course', title: c.name + tag, sub: c.number, href: `#/course/${c.id}`, color: c.color });
       }
       c.categories.forEach((cat) => cat.items.forEach((it) => {
         const inTitle = u.norm(it.title).includes(nq);
@@ -283,12 +289,12 @@
             const i = u.norm(it.note).indexOf(nq);
             sub = '…' + it.note.slice(Math.max(0, i - 25), i + 45).replace(/\n/g, ' ') + '…';
           }
-          out.push({ kind: 'פריט', title: it.title, sub, href: `#/course/${c.id}?item=${it.id}`, color: c.color });
+          out.push({ kind: 'search.item', title: it.title, sub, href: `#/course/${c.id}?item=${it.id}`, color: c.color });
         }
       }));
       (c.notebook || []).forEach((n) => {
         if (u.norm(`${n.title} ${n.body}`).includes(nq)) {
-          out.push({ kind: 'מושג', title: n.title, sub: c.name, href: `#/course/${c.id}?tab=notebook`, color: c.color });
+          out.push({ kind: 'search.concept', title: n.title, sub: c.name, href: `#/course/${c.id}?tab=notebook`, color: c.color });
         }
       });
     });
@@ -308,8 +314,8 @@
         <a href="${r.href}" class="sr${i === sel ? ' sel' : ''}" role="option" aria-selected="${i === sel}" data-i="${i}">
           <span class="dot" style="background:${esc(r.color)}"></span>
           <span class="sr-main"><span class="sr-title" dir="auto">${u.highlight(r.title, q)}</span><span class="sr-sub muted small" dir="auto">${u.highlight(r.sub || '', q)}</span></span>
-          <span class="sr-kind">${r.kind}</span>
-        </a>`).join('') : '<div class="sr-empty muted">לא נמצאו תוצאות</div>';
+          <span class="sr-kind">${tt(r.kind)}</span>
+        </a>`).join('') : `<div class="sr-empty muted">${tt('search.none')}</div>`;
       box.hidden = false;
     };
     const mark = () => box.querySelectorAll('.sr').forEach((el, i) => {
@@ -331,27 +337,28 @@
 
   /* ---------- keyboard shortcuts ---------- */
   const SHORTCUTS = [
-    ['/', 'חיפוש'],
-    ['n', 'פריט חדש (בדף קורס) / קורס חדש (בדשבורד)'],
-    ['Space', 'סימון V על השורה הנבחרת'],
-    ['↑ ↓  או  j k', 'מעבר בין שורות'],
-    ['Enter', 'פתיחת/סגירת הערה'],
-    ['f', 'סימון ⭐ לחזרה לפני המבחן'],
-    ['s', 'בחירת סטטוס'],
-    ['e', 'פרטי פריט ועריכה'],
-    ['Alt + ↑ ↓', 'הזזת שורה'],
-    ['Delete', 'מחיקת שורה'],
-    ['Ctrl + Z', 'ביטול פעולה אחרונה'],
-    ['t', 'טיימר לימוד'],
-    ['a', 'עוזר AI (גם כפתור 🤖 בפינה)'],
-    ['g ואז d / s / r / t', 'מעבר לדשבורד / מערכת / חזרה / סטטיסטיקות'],
-    ['?', 'החלון הזה'],
-    ['Esc', 'סגירת חלון / ביטול עריכה'],
+    ['/', 'sc.search'],
+    ['n', 'sc.new'],
+    ['Space', 'sc.check'],
+    ['sc.moveKeys', 'sc.move'],
+    ['Enter', 'sc.note'],
+    ['f', 'sc.star'],
+    ['s', 'sc.status'],
+    ['e', 'sc.edit'],
+    ['Alt + ↑ ↓', 'sc.reorder'],
+    ['Delete', 'sc.delete'],
+    ['Ctrl + Z', 'menu.undo'],
+    ['t', 'sc.timer'],
+    ['a', 'sc.ai'],
+    ['sc.goKeys', 'sc.go'],
+    ['?', 'sc.help'],
+    ['Esc', 'sc.esc'],
   ];
   app.showHelp = () => ui.modal({
-    title: 'קיצורי מקלדת',
-    body: `<table class="kbd-table">${SHORTCUTS.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table>
-      <p class="muted small">הקיצורים עובדים גם כשהמקלדת על עברית.</p>`,
+    title: tx('menu.shortcuts'),
+    localized: true,
+    body: `<table class="kbd-table">${SHORTCUTS.map(([k, d]) => `<tr><td><kbd dir="ltr">${k.startsWith('sc.') ? tt(k) : esc(k)}</kbd></td><td>${tt(d)}</td></tr>`).join('')}</table>
+      <p class="muted small">${tt('sc.layouts')}</p>`,
   });
 
   let gPending = 0;
@@ -387,16 +394,17 @@
     el.hidden = !i;
     if (!i) { el.innerHTML = ''; return; }
     const bad = i.reason === 'malformed';
-    const note = G.storeFailed ? 'לא הצלחתי לשמור עותק בדפדפן. כדאי להוריד גיבוי עכשיו.' : '';
+    // G.msg is an UPDATE_MSG code ('checking', 'offline'…), translated here so it follows a language switch
+    const msg = G.msg ? tt('update.' + G.msg) : G.storeFailed ? tt('lock.storeFailed') : '';
     el.innerHTML = `
       <div class="lock-text">
-        <b class="lock-title" tabindex="-1">${bad ? 'גרסת הנתונים לא תקינה' : 'נדרש עדכון גרסה'}</b>
-        <span>האתר במצב קריאה בלבד כדי להגן על הנתונים שלך.</span>
-        ${G.msg || note ? `<span class="lock-msg">${esc(G.msg || note)}</span>` : ''}
+        <b class="lock-title" tabindex="-1">${tt(bad ? 'lock.malformed' : 'lock.newer')}</b>
+        <span>${tt('lock.readonly')}</span>
+        ${msg ? `<span class="lock-msg">${msg}</span>` : ''}
       </div>
       <div class="lock-actions">
-        ${bad ? '' : '<button class="btn btn-primary" type="button" data-lock="update">עדכן עכשיו</button>'}
-        <button class="btn" type="button" data-lock="download">הורד גיבוי</button>
+        ${bad ? '' : `<button class="btn btn-primary" type="button" data-lock="update">${tt('lock.update')}</button>`}
+        <button class="btn" type="button" data-lock="download">${tt('lock.download')}</button>
       </div>`;
   }
   function initLockBar() {
@@ -421,12 +429,35 @@
     renderLockBar();
   }
 
+  /* ---------- language switch: shell only ----------
+   * #main, open dialogs and overlays are left alone, so the route, scroll position, unsaved input and the timer stay
+   * as they are. Nothing is committed to the store and nothing is pushed to the cloud. */
+  function onLangChange() {
+    ui.closeMenu();
+    const old = document.getElementById('search');
+    const q = old ? old.value : '';
+    const searchFocused = old && document.activeElement === old;
+    const open = document.getElementById('app-header').classList.contains('search-open');
+    renderHeader();
+    const inp = document.getElementById('search');
+    if (inp && q) inp.value = q;
+    if (open) document.getElementById('app-header').classList.add('search-open');
+    if (searchFocused && inp) inp.focus();
+    const route = app.navRoute || '';
+    renderNav(route);
+    renderSidebar(route);
+    paintSyncDot();
+    renderLockBar();
+    if (CT.timer) CT.timer.renderChip();
+  }
+
   /* ---------- boot ---------- */
   app.start = async () => {
     const result = S.load();
     initLockBar();
     await CT.backup.init();
     renderHeader();
+    I18N.onChange(onLangChange);
     S.subscribe(() => app.rerender());
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     if (CT.timer) CT.timer.init();
@@ -441,7 +472,7 @@
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));
     }
     if (result === 'new') {
-      ui.toast('ברוך הבא! נטענו הקורסים של סמסטר ו. לחץ ? לקיצורי מקלדת.', { ms: 9000 });
+      ui.toast(tx('welcome'), { ms: 9000 });
     }
   };
 

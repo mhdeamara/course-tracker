@@ -22,7 +22,7 @@
   G.remote = null;       // { data, version, updated_at } — the cloud row as received (cloud locks)
   G.unsynced = null;     // raw local state string with edits the cloud never got
   G.storeFailed = false; // a copy or the lock note could not be saved in this browser → download now
-  G.msg = '';            // status line of "עדכן עכשיו"
+  G.msg = '';            // status of "עדכן עכשיו": an UPDATE_MSG code, translated where it is shown
   const listeners = [];
   G.onChange = (fn) => listeners.push(fn);
   const changed = () => listeners.forEach((fn) => { try { fn(G.info); } catch (e) { console.error(e); } });
@@ -43,7 +43,7 @@
   G.found = (data) => { const s = CT.model.schemaOf(data); return s.ok ? s.v : null; };
 
   /** Error thrown by store.commit / replace while locked: nothing was changed. */
-  G.lockedError = () => Object.assign(new Error('האתר במצב קריאה בלבד'), { locked: true });
+  G.lockedError = () => Object.assign(new Error(CT.i18n ? CT.i18n.tx('lock.error') : 'האתר במצב קריאה בלבד'), { locked: true });
 
   /** Classify a stored state string. Cheap for the app's own format ({"version":N,... first); full parse otherwise.
    *  Returns { cls, data } — data only when it had to be parsed. Unparseable text counts as malformed. */
@@ -178,15 +178,9 @@
   };
 
   /* ---------- "עדכן עכשיו": activate the new service worker, then reload once ---------- */
-  G.UPDATE_MSG = {
-    checking: 'בודק אם יש גרסה חדשה…',
-    offline: 'אין חיבור לאינטרנט. נסה שוב כשיש רשת.',
-    network: 'בדיקת העדכון נכשלה. נסה שוב מאוחר יותר.',
-    none: 'אין עדכון זמין כרגע. נסה שוב מאוחר יותר.',
-    timeout: 'העדכון לא הופעל. סגור את כל הלשוניות של האתר ופתח אותו מחדש.',
-    loop: 'האתר נטען מחדש לפני רגע ועדיין לא עודכן. סגור את כל הלשוניות של האתר ופתח אותו מחדש.',
-    reloading: 'טוען את הגרסה החדשה…',
-  };
+  // codes → i18n keys 'update.<code>' (texts in js/i18n.js)
+  G.UPDATE_MSG = { checking: 'update.checking', offline: 'update.offline', network: 'update.network', none: 'update.none',
+    timeout: 'update.timeout', loop: 'update.loop', reloading: 'update.reloading' };
   const RELOAD_GAP = 5 * 60000;
   /** Reload at most once per 5 minutes (per tab session), so a version that still can't read the data never loops. */
   const reloadOnce = (env) => {
@@ -217,7 +211,7 @@
     return reloadOnce(env) ? 'reloading' : 'loop';
   };
   G.update = async () => {
-    G.msg = G.UPDATE_MSG.checking; changed();
+    G.msg = 'checking'; changed();
     const sw = typeof navigator !== 'undefined' && 'serviceWorker' in navigator ? navigator.serviceWorker : null;
     const r = await G.runUpdate({
       online: () => navigator.onLine !== false,
@@ -234,7 +228,7 @@
       now: () => Date.now(),
       reload: () => location.reload(),
     });
-    G.msg = G.UPDATE_MSG[r] || '';
+    G.msg = G.UPDATE_MSG[r] ? r : '';
     changed();
     return r;
   };

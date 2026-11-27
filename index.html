@@ -14,6 +14,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="הקורסים שלי">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <!-- UI language: sets lang/dir before first paint (same rule as CT.i18n — it is CT.i18n) -->
+  <script src="js/i18n.js"></script>
   <!-- apply theme before first paint (avoids a white flash in dark mode) -->
   <script>
     (function () {
@@ -27,18 +29,18 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">דלג לתוכן</a>
+  <a class="skip-link" href="#main" data-i18n="a11y.skip">דלג לתוכן</a>
   <div class="layout">
-    <aside id="sidebar" class="sidebar" aria-label="ניווט ראשי"></aside>
+    <aside id="sidebar" class="sidebar" aria-label="ניווט ראשי" data-i18n-aria="nav.main"></aside>
     <div class="content">
       <header id="app-header" class="app-header"></header>
       <div id="lock-bar" class="lock-bar" role="alert" hidden></div>
-      <main id="main" class="main" tabindex="-1"></main>
+      <main id="main" class="main" tabindex="-1" data-ct-content></main>
     </div>
   </div>
-  <nav id="bottom-nav" class="bottom-nav" aria-label="ניווט ראשי"></nav>
+  <nav id="bottom-nav" class="bottom-nav" aria-label="ניווט ראשי" data-i18n-aria="nav.main"></nav>
   <div id="toasts" class="toasts" aria-live="polite"></div>
-  <noscript>המערכת צריכה JavaScript כדי לעבוד.</noscript>
+  <noscript><p dir="rtl" lang="he">המערכת צריכה JavaScript כדי לעבוד.</p><p dir="ltr" lang="en">This app needs JavaScript to work.</p></noscript>
 
   <!-- Local libraries (no network) -->
   <script src="vendor/katex/katex.min.js"></script>

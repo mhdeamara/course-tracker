@@ -9,6 +9,8 @@
  *    nothing is pending locally, the cloud data replaces the local copy. */
 (function (CT) {
   'use strict';
+  // UI text (js/i18n.js); the key itself when i18n is not loaded (node tests)
+  const tx = (k, p) => (CT.i18n ? CT.i18n.tx(k, p) : k);
   const { u, ui } = CT;
   const G = CT.guard; // read-only lock for data this app version must not save over (schema-guard.js)
   const C = {};
@@ -324,9 +326,10 @@
     setStatus('conflict');
     const count = (st) => {
       const items = st.courses.flatMap((c) => c.categories.flatMap((cat) => cat.items));
-      return `${st.courses.length} קורסים · ${items.filter((i) => i.status === 'done').length} פריטים הושלמו`;
+      return `${tx('conflict.courses', { n: st.courses.length })} · ${tx('conflict.done', { n: items.filter((i) => i.status === 'done').length })}`;
     };
-    const when = (iso) => (iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+    // display only — the stored timestamps stay ISO
+    const when = (iso) => (iso ? new Date(iso).toLocaleString(CT.i18n ? CT.i18n.locale() : 'he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—');
     let remoteState;
     try { remoteState = CT.model.migrate(remote.data); } catch (e) { remoteState = null; }
     return new Promise((resolve) => {
@@ -341,18 +344,18 @@
             const hadWork = !C.isEmpty(CT.store.state);
             if (hadWork) localBackupBeforeOverwrite();
             applyRemote(remote);
-            ui.toast(hadWork ? 'נטענו הנתונים מהענן. עותק של נתוני המכשיר נשמר בהורדות.' : 'נטענו הנתונים מהענן');
+            ui.toast(tx(hadWork ? 'conflict.loadedBackup' : 'conflict.loaded'));
           } else {
             // write boundary: the cloud may have changed while the dialog was open — check it again first
             const fresh = await fetchRemote();
             const fc = rowCls(fresh);
             if (fresh && fc !== 'ok') { lockFromRemote(fresh, fc); resolve(); return; }
-            if (fresh && fresh.version !== remote.version) { setStatus('error', 'הענן השתנה שוב — נסה "סנכרן עכשיו"'); resolve(); return; }
+            if (fresh && fresh.version !== remote.version) { setStatus('error', tx('conflict.changedAgain')); resolve(); return; }
             meta.dirty = true;
             let ok;
             if (fresh) { meta.version = fresh.version; ok = await pushRemote(); } else ok = await insertRemote();
-            if (!ok) { setStatus('error', 'הענן השתנה שוב — נסה "סנכרן עכשיו"'); resolve(); return; }
-            ui.toast('הנתונים מהמכשיר הזה נשמרו בענן');
+            if (!ok) { setStatus('error', tx('conflict.changedAgain')); resolve(); return; }
+            ui.toast(tx('conflict.saved'));
           }
           if (!G.locked()) setStatus('synced');
         } catch (e) {
@@ -362,21 +365,21 @@
         }
         resolve();
       };
+      const h = (k, p) => u.esc(tx(k, p));
       ui.modal({
-        title: kind === 'first' ? 'יש כבר נתונים בענן' : 'הנתונים השתנו בשני מכשירים',
-        body: `<p>${kind === 'first'
-          ? 'בחשבון כבר שמורים נתונים, וגם במכשיר הזה יש נתונים. איזה עותק להשאיר?'
-          : 'מכשיר אחר שמר שינויים בזמן שגם כאן היו שינויים שעוד לא סונכרנו. איזה עותק להשאיר?'}</p>
+        title: tx(kind === 'first' ? 'conflict.titleFirst' : 'conflict.titleBoth'),
+        localized: true,
+        body: `<p>${h(kind === 'first' ? 'conflict.bodyFirst' : 'conflict.bodyBoth')}</p>
           <div class="choice-grid">
-            <div class="choice"><b>☁️ הענן</b><span>${remoteState ? count(remoteState) : 'לא קריא'}</span><span class="muted small">עודכן: ${when(remote.updated_at)}</span></div>
-            <div class="choice"><b>💻 המכשיר הזה</b><span>${count(CT.store.state)}</span><span class="muted small">עודכן: ${when(CT.store.state.meta.updatedAt)}</span></div>
+            <div class="choice"><b>${h('conflict.cloud')}</b><span>${u.esc(remoteState ? count(remoteState) : tx('conflict.unreadable'))}</span><span class="muted small">${h('conflict.updated', { when: when(remote.updated_at) })}</span></div>
+            <div class="choice"><b>${h('conflict.device')}</b><span>${u.esc(count(CT.store.state))}</span><span class="muted small">${h('conflict.updated', { when: when(CT.store.state.meta.updatedAt) })}</span></div>
           </div>
-          <p class="muted small">העותק שלא נבחר לא נמחק לגמרי: אם תבחר בענן, עותק של נתוני המכשיר יורד כקובץ גיבוי.</p>`,
+          <p class="muted small">${h('conflict.note')}</p>`,
         actions: [
-          { label: 'השאר את המכשיר הזה', fn: () => { finish('local'); } },
-          { label: 'השאר את הענן', primary: true, fn: () => { finish('cloud'); } },
+          { label: tx('conflict.keepDevice'), fn: () => { finish('local'); } },
+          { label: tx('conflict.keepCloud'), primary: true, fn: () => { finish('cloud'); } },
         ],
-        onClose: () => { if (!done) { conflictOpen = false; done = true; setStatus('conflict', 'ההתנגשות לא נפתרה'); resolve(); } },
+        onClose: () => { if (!done) { conflictOpen = false; done = true; setStatus('conflict', tx('conflict.unresolved')); resolve(); } },
       });
     });
   }
@@ -434,14 +437,15 @@
   };
 
   /** Human-readable status for the sidebar / settings. */
+  /** [css class, plain text] of the current status (C.status itself is a stable code, never translated). */
   C.label = () => ({
-    off: ['', 'מקומי בלבד'],
-    'signed-out': ['warn', 'לא מחובר לסנכרון'],
-    syncing: ['busy', 'מסנכרן…'],
-    synced: ['ok', 'מסונכרן'],
-    offline: ['warn', 'אין אינטרנט — יסונכרן אחר כך'],
-    error: ['bad', 'שגיאת סנכרון'],
-    conflict: ['bad', 'צריך לבחור גרסה'],
-    locked: ['bad', G.info && G.info.reason === 'malformed' ? 'גרסת הנתונים לא תקינה' : 'נדרש עדכון גרסה'],
+    off: ['', tx('sync.off')],
+    'signed-out': ['warn', tx('sync.signedOut')],
+    syncing: ['busy', tx('sync.syncing')],
+    synced: ['ok', tx('sync.synced')],
+    offline: ['warn', tx('sync.offline')],
+    error: ['bad', tx('sync.error')],
+    conflict: ['bad', tx('sync.conflict')],
+    locked: ['bad', tx(G.info && G.info.reason === 'malformed' ? 'lock.malformed' : 'lock.newer')],
   }[C.status] || ['', C.status]);
 })(window.CT);

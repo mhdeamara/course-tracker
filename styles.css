@@ -187,7 +187,19 @@ kbd {
 .header-inner { max-width: 1180px; margin: 0 auto; padding: 10px 20px; display: flex; gap: 12px; align-items: center; min-height: 60px; }
 .hd-title { display: none; min-width: 0; font-weight: var(--fw-bold); font-size: var(--fs-xl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header-actions { display: flex; gap: 4px; align-items: center; margin-inline-start: auto; }
-.app-header .hd-search, .app-header .hd-more { display: none; } /* phone only; wider screens have the search field and the sidebar */
+.app-header .hd-search { display: none; } /* phone only; wider screens have the search field */
+.app-header .hd-more { display: inline-grid; } /* secondary actions + language, on every screen size */
+/* left-to-right interface (English): mirror the one direction-bound shell icon (drawn for a right-hand sidebar) */
+[dir="ltr"] .sb-toggle .ic { transform: scaleX(-1); }
+/* interface language (settings) */
+.lang-options { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 4px 8px; }
+.lang-opt {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding-inline: 14px; border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--surface); cursor: pointer; font-weight: var(--fw-semi);
+}
+.lang-opt input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.lang-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.lang-opt:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 /* secondary navigation strip: sub-pages of the current destination (icon rail and phone) */
 .nav { max-width: 1180px; margin: 0 auto; padding: 0 14px 8px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .nav[hidden] { display: none; }
@@ -1090,7 +1102,7 @@ body.is-dragging { cursor: grabbing; user-select: none; }
 .modal-body { padding: 8px 18px 14px; overflow-y: auto; }
 .modal-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 @keyframes fade { from { opacity: 0; } }
-.toasts { position: fixed; bottom: 18px; inset-inline-start: 50%; transform: translateX(50%); display: flex; flex-direction: column; gap: 8px; z-index: 90; align-items: center; pointer-events: none; }
+.toasts { position: fixed; bottom: 18px; inset-inline: 0; margin-inline: auto; width: max-content; max-width: calc(100vw - 24px); display: flex; flex-direction: column; gap: 8px; z-index: 90; align-items: center; pointer-events: none; }
 .toast {
   pointer-events: auto; background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: var(--r-md);
   box-shadow: var(--shadow-pop); display: flex; gap: 14px; align-items: center; animation: toast-in var(--dur) var(--ease); transition: opacity var(--dur-slow), transform var(--dur-slow); max-width: min(92vw, 560px);
@@ -1377,6 +1389,14 @@ button.tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
   .chat-panel { inset: 0; width: auto; height: auto; border-radius: 0; border: none; z-index: 85; }
 }
 @media print { .ai-fab, .chat-panel { display: none; } }
+/* English (LTR) interface: these overlays still hold Hebrew (RTL) content, where inline-end is the left — pin them to
+ * the interface's end (right) physically, away from the left-hand sidebar */
+@media (min-width: 701px) {
+  :root[dir="ltr"] .ai-fab, :root[dir="ltr"] .chat-panel { inset-inline-end: auto; right: 20px; }
+}
+@media (min-width: 641px) {
+  :root[dir="ltr"] #adk-toasts { inset-inline-end: auto; right: 18px; }
+}
 
 /* ---------- "המודל שלי" ---------- */
 .mymoodle { display: flex; flex-direction: column; gap: 12px; }

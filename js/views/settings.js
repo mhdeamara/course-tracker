@@ -27,6 +27,7 @@
     root.innerHTML = `
       <div class="settings">
         <h1>הגדרות</h1>
+        ${langCard()}
         ${syncSection()}
 
         <section class="card">
@@ -259,8 +260,32 @@
     </section>`;
   }
 
+  /** Interface language — a translated card inside this (not yet translated) page. Changing it is a UI preference
+   * only: no store commit, no cloud push; the app re-renders just its shell. */
+  function langCard() {
+    const I = CT.i18n, cur = I.lang();
+    return `<section class="card lang-card" id="lang-card"${I.attrs()}>
+      <h2 id="lang-title">${I.t('lang.title')}</h2>
+      <div class="lang-options" role="radiogroup" aria-labelledby="lang-title">
+        ${I.LANGS.map((l) => `<label class="lang-opt"><input type="radio" name="ct-lang" value="${l}"${l === cur ? ' checked' : ''}>
+          <span lang="${l}" dir="${l === 'he' ? 'rtl' : 'ltr'}">${I.t('lang.' + l)}</span></label>`).join('')}
+      </div>
+      <p class="small muted">${I.t('lang.hint')}</p>
+      ${cur === 'he' ? '' : `<p class="small muted">${I.t('lang.partial')}</p>`}
+    </section>`;
+  }
+  function setLang(value) {
+    CT.i18n.setLang(value);
+    const card = document.getElementById('lang-card');
+    if (!card) return;
+    card.outerHTML = langCard();
+    const on = document.querySelector('#lang-card input[name="ct-lang"]:checked');
+    if (on) on.focus();
+  }
+
   function onChange(e) {
     const t = e.target;
+    if (t.name === 'ct-lang') { setLang(t.value); return; }
     if (t.matches('[data-action=cat-year]')) { CT.views.catalog.setYear(t.value); return; }
     if (t.matches('[data-action=cat-fac]')) { CT.views.catalog.setFaculty(t.value); return; }
     if (t.matches('[data-action=cat-group]')) { CT.views.catalog.toggleGroup(t.value); return; }

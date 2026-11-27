@@ -11,7 +11,7 @@
 
   let t = null;          // { courseId, mode: 'pomo'|'free', phase: 'work'|'break', running, startedAt, acc }
   let panel = null;      // open modal api
-  const baseTitle = document.title;
+  const baseTitle = () => CT.i18n.tx('app.name'); // follows the interface language
 
   const load = () => { try { t = JSON.parse(localStorage.getItem(KEY)); } catch (e) { t = null; } };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(t)); } catch (e) { /* ignore */ } };
@@ -61,7 +61,7 @@
     }
     T.renderChip();
     if (panel) drawPanel();
-    document.title = t.running ? `${display()} · ${baseTitle}` : baseTitle;
+    document.title = t.running ? `${display()} · ${baseTitle()}` : baseTitle();
   }
 
   T.init = () => { load(); setInterval(tick, 1000); tick(); };
@@ -71,10 +71,11 @@
     if (!slot) return;
     if (active()) {
       const c = S.course(t.courseId);
-      slot.innerHTML = `<button class="timer-chip${t.running ? ' running' : ''}${t.phase === 'break' ? ' break' : ''}" style="--c:${esc(c ? c.color : 'var(--accent)')}" aria-label="טיימר: ${display()}">
+      slot.innerHTML = `<button class="timer-chip${t.running ? ' running' : ''}${t.phase === 'break' ? ' break' : ''}" style="--c:${esc(c ? c.color : 'var(--accent)')}" aria-label="${CT.i18n.t('timer.chip', { time: display() })}">
         ${t.phase === 'break' ? '☕' : t.mode === 'pomo' ? '🍅' : '⏱'} <span dir="ltr">${display()}</span></button>`;
     } else {
-      slot.innerHTML = `<button class="icon-btn" aria-label="טיימר לימוד (T)" title="טיימר לימוד (T)">${icon.timer}</button>`;
+      const label = CT.i18n.t('timer.open');
+      slot.innerHTML = `<button class="icon-btn" aria-label="${label}" title="${label}">${icon.timer}</button>`;
     }
     slot.firstElementChild.onclick = T.open;
   };

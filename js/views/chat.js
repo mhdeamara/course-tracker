@@ -72,8 +72,7 @@
       return `<div class="chat-empty">
         <p><b>שלום!</b> אפשר לשאול על הקורסים, המטלות, המבחנים, המערכת והממוצע שלך.</p>
         <div class="chat-suggest">${SUGGESTIONS.map((s) => `<button type="button" class="chat-sug" data-sug="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-        <p class="small muted">העוזר רק קורא את הנתונים ולא משנה כלום. השאלות והנתונים שהוא קורא נשלחים לעיבוד אצל Anthropic.
-          השיחה נשמרת רק במכשיר הזה.</p></div>`;
+        <p class="small muted"${CT.i18n.attrs()}>${CT.i18n.t('chat.privacy')}</p></div>`;
     }
     const parts = [];
     let chips = [];

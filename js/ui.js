@@ -2,6 +2,7 @@
 (function (CT) {
   'use strict';
   const u = CT.u;
+  const I18N = CT.i18n, tt = I18N.t, tx = I18N.tx;
   const ui = { justChecked: null };
 
   /* ---------- toast ---------- */
@@ -10,7 +11,7 @@
     const t = document.createElement('div');
     t.className = 'toast' + (opts.error ? ' toast-error' : '');
     t.setAttribute('role', opts.error ? 'alert' : 'status');
-    t.innerHTML = `<span>${u.esc(msg)}</span>`;
+    t.innerHTML = `<span dir="auto">${u.esc(msg)}</span>`;
     if (opts.action) {
       const btn = document.createElement('button');
       btn.className = 'toast-action';
@@ -24,7 +25,9 @@
   };
 
   /* ---------- modal ---------- */
-  ui.modal = ({ title, body, actions = [], wide = false, onClose }) => {
+  /** `localized`: the caller's texts are translated (CT.i18n). Otherwise the dialog is not-yet-translated content
+   * and stays Hebrew/RTL in English mode, like the page it came from. */
+  ui.modal = ({ title, body, actions = [], wide = false, onClose, localized = false }) => {
     const prevFocus = document.activeElement;
     const wrap = document.createElement('div');
     wrap.className = 'modal-backdrop';
@@ -32,7 +35,7 @@
       <div class="modal${wide ? ' modal-wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <header class="modal-head">
           <h2 id="modal-title">${u.esc(title)}</h2>
-          <button class="icon-btn" data-close aria-label="סגור">${u.icon.close}</button>
+          <button class="icon-btn" data-close aria-label="${tt('common.close')}">${u.icon.close}</button>
         </header>
         <div class="modal-body"></div>
         <footer class="modal-foot"></footer>
@@ -70,6 +73,7 @@
     document.addEventListener('keydown', onKey, true);
     wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
     wrap.querySelector('[data-close]').onclick = close;
+    if (localized) I18N.localized(wrap); else I18N.content(wrap);
     document.body.appendChild(wrap);
     const first = bodyEl.querySelector('input:not([type=hidden]),select,textarea') || foot.querySelector('.btn-primary') || wrap.querySelector('[data-close]');
     setTimeout(() => first && first.focus(), 0);
@@ -77,13 +81,13 @@
     return api;
   };
 
-  ui.confirm = (msg, okLabel = 'אישור', danger = false) => new Promise((res) => {
+  ui.confirm = (msg, okLabel = tx('common.ok'), danger = false) => new Promise((res) => {
     let answered = false;
     ui.modal({
-      title: 'אישור',
-      body: `<p class="pre">${u.esc(msg)}</p>`,
+      title: tx('common.confirm'),
+      body: `<p class="pre" dir="auto">${u.esc(msg)}</p>`,
       actions: [
-        { label: 'ביטול', fn: () => { answered = true; res(false); } },
+        { label: tx('common.cancel'), fn: () => { answered = true; res(false); } },
         { label: okLabel, primary: !danger, danger, fn: () => { answered = true; res(true); } },
       ],
       onClose: () => { if (!answered) res(false); },
@@ -96,8 +100,8 @@
       title,
       body: `<label class="field"><span>${u.esc(label || title)}</span><input type="text" dir="auto" value="${u.esc(value)}"></label>`,
       actions: [
-        { label: 'ביטול', fn: () => { answered = true; res(null); } },
-        { label: 'שמור', primary: true, fn: (api) => { answered = true; res(api.body.querySelector('input').value.trim()); } },
+        { label: tx('common.cancel'), fn: () => { answered = true; res(null); } },
+        { label: tx('common.save'), primary: true, fn: (api) => { answered = true; res(api.body.querySelector('input').value.trim()); } },
       ],
       onClose: () => { if (!answered) res(null); },
     });
@@ -109,11 +113,12 @@
   /* ---------- popup menu ---------- */
   let openMenu = null;
   ui.closeMenu = () => { if (openMenu) { openMenu.remove(); openMenu = null; } };
-  ui.menu = (anchor, items) => {
+  ui.menu = (anchor, items, { localized = false } = {}) => {
     ui.closeMenu();
     const m = document.createElement('div');
     m.className = 'menu';
     m.setAttribute('role', 'menu');
+    if (localized) I18N.localized(m); else I18N.content(m);
     items.filter(Boolean).forEach((it) => {
       if (it === '-') { m.insertAdjacentHTML('beforeend', '<hr>'); return; }
       const b = document.createElement('button');
@@ -126,8 +131,15 @@
     document.body.appendChild(m);
     const r = anchor.getBoundingClientRect();
     const mw = m.offsetWidth, mh = m.offsetHeight;
-    let left = r.right - mw; // RTL: align to the anchor's right edge
-    if (left < 8) left = Math.min(r.left, window.innerWidth - mw - 8);
+    // align to the anchor's inline-start edge (right in RTL, left in LTR), flipping when it would leave the screen
+    let left;
+    if (getComputedStyle(m).direction === 'rtl') {
+      left = r.right - mw;
+      if (left < 8) left = Math.min(r.left, window.innerWidth - mw - 8);
+    } else {
+      left = r.left;
+      if (left + mw > window.innerWidth - 8) left = Math.max(8, r.right - mw);
+    }
     let top = r.bottom + 4;
     if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 4);
     m.style.left = `${Math.max(8, left) + window.scrollX}px`;
@@ -183,13 +195,13 @@
 
   /* ---------- HTML snippets ---------- */
   ui.bar = (pct, label = '', small = false) => `
-    <div class="progress${small ? ' progress-sm' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${u.esc(label || 'התקדמות')}">
+    <div class="progress${small ? ' progress-sm' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${label ? u.esc(label) : tt('common.progress')}">
       <div class="progress-fill" style="width:${pct}%"></div>
     </div>`;
   /** Donut progress ring (SVG) with the percentage in the middle. */
   ui.ring = (pct, size = 58, stroke = 6) => {
     const r = (size - stroke) / 2, c = 2 * Math.PI * r, h = size / 2;
-    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${pct}% הושלמו">
+    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${tt('common.ringDone', { pct })}">
       <circle class="ring-bg" cx="${h}" cy="${h}" r="${r}" stroke-width="${stroke}"/>
       <circle class="ring-fg" cx="${h}" cy="${h}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(2)}" transform="rotate(-90 ${h} ${h})"/>
       <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${pct}<tspan class="ring-unit">%</tspan></text>

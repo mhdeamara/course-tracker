@@ -168,7 +168,7 @@
     if (!on()) return '';
     V.applyLook();
     const L = G.summary(S.state).level;
-    return `<a href="#/xp" class="sb-xp" id="sb-xp" aria-label="רמה ${L.n}, ${esc(title(L))}"><span class="sb-xp-n${frameCls()}">${L.n}</span><span class="sb-xp-t"><b>${esc(title(L))}</b>${bar(L.pct)}</span></a>`;
+    return `<a href="#/xp" class="sb-xp" id="sb-xp" aria-label="${CT.i18n.t('xp.chip', { n: L.n, title: title(L) })}"><span class="sb-xp-n${frameCls()}">${L.n}</span><span class="sb-xp-t"><b dir="auto">${esc(title(L))}</b>${bar(L.pct)}</span></a>`;
   };
   function paintChip() {
     const el = document.getElementById('sb-xp');

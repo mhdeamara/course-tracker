@@ -1,10 +1,10 @@
 # course-tracker — project instructions
 
-Hebrew RTL, local-first course tracker for Technion students. Public repo `mhdeamara/course-tracker`, GitHub Pages.
+Bilingual (Hebrew RTL / English LTR), local-first course tracker for Technion students. Public repo `mhdeamara/course-tracker`, GitHub Pages.
 Priorities: data integrity & security > correctness > preserving features > maintainability > performance > token use.
 
 ## Owner rules
-- Reply to the owner in Hebrew. Code, comments, commits, technical docs in English; UI text in Hebrew.
+- Reply to the owner in Hebrew. Code, comments, commits, technical docs in English; UI text through i18n keys (Hebrew and English).
 - Files: reading is free. Creating, deleting, moving or renaming any file or folder needs explicit approval. An approved plan that names exact files counts as approval for those files only. Temporary work files go to the session scratchpad, never into this folder.
 - Workflow per task: (A) read the minimum relevant code; (B) plan — objective, approach, files, risks, verification; at most 5 questions, only if the answer changes the implementation; wait for approval; (C) smallest coherent change, reuse existing utilities and CSS, no unrelated refactors, no new dependencies without approval; handle empty/error/offline states; (D) verify (below); (E) report: what changed, files, test results, risks, manual steps. Stop after the approved stage.
 - Approving a stage includes committing it. Pushing needs a separate explicit "push" from the owner.
@@ -35,7 +35,16 @@ Use targeted search and line ranges; don't scan the repo or dump whole files.
 - Adhkar: never deduct points for adhkar not done; no background push beyond the existing service worker.
 
 ## UI
-Preserve Hebrew/RTL, light and dark themes, existing CSS variables and components. Mobile first; keyboard access and ARIA. No redesign of unrelated pages; navigation changes must keep every feature reachable.
+Preserve light and dark themes, existing CSS variables and components. Mobile first; keyboard access and ARIA. No redesign of unrelated pages; navigation changes must keep every feature reachable.
+
+### Languages (i18n)
+- All new or changed UI text goes through `CT.i18n` keys in `js/i18n.js`, with Hebrew and English in the same change (same keys, same `{params}`; `tests/i18n.test.js` checks). No hard-coded UI strings.
+- `t()` returns HTML-escaped text (dictionary text and params) for templates and attributes; `tx()` returns plain text for `textContent`, `setAttribute`, toasts and `Error` messages. Plurals are `{ one, two?, other }` objects with `{n}`.
+- Translate interface text only. Never translate or change stored values, ids, category ids, statuses, course names, Moodle content or user data; logic never compares against translated text.
+- Layout must work in RTL and LTR: CSS logical properties (`inline-start/end`, `margin-inline`…), no `left/right` or `translateX` for direction-bound placement; mirror only direction-bound icons.
+- User content and mixed text get `dir="auto"` (or `<bdi>`). Pages not translated yet stay Hebrew/RTL in English mode (`data-ct-content`); a translated block inside them uses `CT.i18n.attrs()`, a translated dialog or menu passes `localized: true`.
+- Changing the language is a UI preference (`ct.lang`): no store commit, no cloud push; it re-renders only the app shell and never `#main`, open dialogs or unsaved input. The lang/dir bootstrap in `<head>` is `js/i18n.js` itself — keep a single selection rule.
+- Dates, numbers and plurals are formatted for display with `CT.i18n.locale()`; stored formats never change. Hebrew and English keyboard shortcuts both keep working.
 
 ## Verification
 - Discover test files (`ls tests`) and run them one at a time: `node --test tests/<file>.test.js`. Run the related file first; run all files when touching shared modules, persistence, migrations, auth, sync or a release. Add a regression test for every fixed bug and new logic.

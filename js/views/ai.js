@@ -51,11 +51,11 @@
     const cloud = C();
     const set = V.settings();
     const head = '<h2>🤖 עוזר AI</h2>';
-    const privacy = `<p class="small muted">כל בקשה לעוזר נשלחת לעיבוד אצל Anthropic (ספק מודל Claude) דרך שרת ה-Supabase שלך.
-      לפי מדיניות Anthropic ל-API: התוכן לא משמש לאימון מודלים, ונמחק אצלם תוך 30 יום (תוכן שסומן כהפרת מדיניות עשוי להישמר עד שנתיים).
-      מפתח ה-API נשמר רק כסוד בשרת — לא באתר, לא בדפדפן ולא בגיבוי.</p>`;
-    if (!cloud || !cloud.enabled) return `<section class="card ai-card" id="ai">${head}<p class="muted">העוזר עובד דרך Supabase, שעוד לא הוגדר באתר הזה.</p></section>`;
-    if (!cloud.signedIn()) return `<section class="card ai-card" id="ai">${head}<p class="muted">כדי להשתמש בעוזר צריך להתחבר לחשבון באתר (בסעיף "סנכרון בין מכשירים").</p>${privacy}</section>`;
+    // privacy and availability notices are translated (B.1); the rest of this card follows in a later stage
+    const I = CT.i18n;
+    const privacy = `<p class="small muted"${I.attrs()}>${I.t('ai.privacy')}</p>`;
+    if (!cloud || !cloud.enabled) return `<section class="card ai-card" id="ai">${head}<p class="muted"${I.attrs()}>${I.t('ai.notConfigured')}</p></section>`;
+    if (!cloud.signedIn()) return `<section class="card ai-card" id="ai">${head}<p class="muted"${I.attrs()}>${I.t('ai.signIn')}</p>${privacy}</section>`;
     if (info.state === 'unknown') setTimeout(loadUsage, 0);
 
     let status;
