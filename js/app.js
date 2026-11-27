@@ -33,6 +33,8 @@
   };
   function applyTheme() {
     document.documentElement.dataset.theme = isDark() ? 'dark' : 'light';
+    const meta = document.querySelector('meta[name="theme-color"]'); // browser/OS bar follows the in-app theme (= --bg)
+    if (meta) meta.setAttribute('content', isDark() ? '#090b0f' : '#f5f6f8');
     const btn = document.getElementById('theme-btn');
     if (btn) { btn.innerHTML = isDark() ? icon.sun : icon.moon; btn.setAttribute('aria-label', isDark() ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'); }
   }

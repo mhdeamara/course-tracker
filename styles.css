@@ -1,22 +1,22 @@
-/* styles.css — "Calm focus": quiet neutrals, one indigo accent, green for done, amber for points. RTL-first.
+/* styles.css — "Calm focus": quiet neutrals, one blue accent, green for done, amber for points. RTL-first.
  * Every color, space, radius, shadow, font size and duration is a token below; dark mode overrides the colors only. */
 
 /* ===== tokens ===== */
 :root {
   /* color — surfaces */
-  --bg: #f4f5f9;
+  --bg: #f5f6f8;
   --surface: #ffffff;
-  --surface-2: #f0f2f7;
-  --surface-3: #e7eaf2;
-  --border: #e1e4ed;
-  --border-strong: #c9cfdc;
+  --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
+  --border: #e3e6eb;
+  --border-strong: #c9ced6;
   /* color — text */
-  --text: #1b1f2a;
-  --muted: #596075;
+  --text: #17202e;
+  --muted: #5b6576;
   /* color — roles */
-  --accent: #4f5bd5;
-  --accent-hover: #4350c4;
-  --accent-soft: #eceefe;
+  --accent: #1468d0;
+  --accent-hover: #1159b4;
+  --accent-soft: #e7f0fd;
   --accent-text: #ffffff;
   --accent-2: #b4446c;
   --gold: #c98512;
@@ -25,13 +25,13 @@
   --xp-soft: #fdf2dd;
   --success: #0f7a64;
   --success-soft: #e2f5ef;
-  --danger: #c93a51;
+  --danger: #b42b37;
   --danger-bg: #fdecef;
   --warn: #9c5d06;
   --warn-bg: #fdf3e1;
-  --info-bg: #eceffe;
-  --st-todo: #a3a9b8;
-  --st-doing: #4f5bd5;
+  --info-bg: #e7f0fd;
+  --st-todo: #7f8796;
+  --st-doing: #1468d0;
   --st-done: #0f7a64;
   --st-review: #c0641a;
   --flag: #e0a020;
@@ -81,7 +81,7 @@
   --shadow-3: 0 8px 20px rgb(var(--shadow-color) / .12), 0 24px 56px rgb(var(--shadow-color) / .16);
   --shadow-pop: 0 6px 16px rgb(var(--shadow-color) / .12), 0 2px 4px rgb(var(--shadow-color) / .08);
   --shadow: var(--shadow-1);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); /* solid accent ring: >= 3:1 on every surface and accent */
 
   /* motion */
   --dur-fast: 120ms;
@@ -94,18 +94,18 @@
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --bg: #0f1218;
-  --surface: #171b24;
-  --surface-2: #1f2430;
-  --surface-3: #282e3c;
-  --border: #2a303f;
-  --border-strong: #3b4254;
-  --text: #e8eaf2;
-  --muted: #9ea5b8;
-  --accent: #8d96ff;
-  --accent-hover: #a2a9ff;
-  --accent-soft: #232848;
-  --accent-text: #0f1218;
+  --bg: #090b0f;
+  --surface: #15181e;
+  --surface-2: #1e2229;
+  --surface-3: #282d36;
+  --border: #262a32;
+  --border-strong: #3a404b;
+  --text: #f1f3f7;
+  --muted: #9aa2b1;
+  --accent: #2693ff;
+  --accent-hover: #4da6ff;
+  --accent-soft: #10243a;
+  --accent-text: #04101e;
   --accent-2: #f08aa8;
   --gold: #f2b34b;
   --xp: #f2b34b;
@@ -117,9 +117,9 @@
   --danger-bg: #3a1d25;
   --warn: #f0b65a;
   --warn-bg: #33270f;
-  --info-bg: #1d2240;
-  --st-todo: #6f7689;
-  --st-doing: #8d96ff;
+  --info-bg: #10243a;
+  --st-todo: #6b7383;
+  --st-doing: #2693ff;
   --st-done: #4fcfa9;
   --st-review: #f09a5c;
   --flag: #f2b34b;

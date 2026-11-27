@@ -143,6 +143,21 @@ window.CT = window.CT || {};
     menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
     layers: svg('<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>'),
     award: svg('<circle cx="12" cy="9" r="5.5"/><path d="M8.5 13.5L7 21l5-2.5 5 2.5-1.5-7.5"/>'),
+    // redesign set (Stage A): added now, used by later stages
+    cap: svg('<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c0 1.6 2.7 3 6 3s6-1.4 6-3v-5M22 9v5"/>'),
+    spark: svg('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'),
+    bell: svg('<path d="M6 16v-5a6 6 0 1112 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 004 0"/>'),
+    refresh: svg('<path d="M20 11a8 8 0 00-14.7-4.3L3 9M3 4v5h5M4 13a8 8 0 0014.7 4.3L21 15M21 20v-5h-5"/>'),
+    send: svg('<path d="M20 12L4 4l3 8-3 8z"/><path d="M7 12h13"/>'),
+    info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
+    inbox: svg('<path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 2h6l1-2h5"/>'),
+    cloud: svg('<path d="M7 18h10a4 4 0 00.5-8 6 6 0 00-11.4 1.5A3.3 3.3 0 007 18z"/>'),
+    sliders: svg('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'),
+    trophy: svg('<path d="M8 4h8v5a4 4 0 01-8 0z"/><path d="M8 6H5a3 3 0 003 4M16 6h3a3 3 0 01-3 4M12 13v4M8.5 20h7"/>'),
+    alert: svg('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>'),
+    sidebar: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M15 4.5v15M10 10l-2 2 2 2"/>'),
+    expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
+    chevSide: svg('<path d="M15 6l-6 6 6 6"/>'), // points "forward" in RTL (left); mirror it (scaleX(-1)) for "back"
   };
 
   CT.u = u;
