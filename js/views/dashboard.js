@@ -87,9 +87,9 @@
     }
     const err = S.state.moodle && S.state.moodle.linkError;
     if (err) {
-      out.push(`<div class="td-alert" role="alert">${icon.alert}<div class="td-alert-t"><b>${t('td.moodleFailed')}</b>${err.message ? `<span class="muted small" dir="auto">${esc(err.message)}</span>` : ''}</div>
+      out.push(`<div class="td-alert" role="alert">${icon.alert}<div class="td-alert-t"><b>${t('td.moodleFailed')}</b><span class="muted small">${esc(CT.views.moodle.errorText(err))}</span></div>
         <span class="td-alert-a"><button class="btn btn-small" data-action="moodle-retry">${icon.refresh}<span>${t('td.retry')}</span></button>
-        <a class="btn btn-small btn-ghost" href="#/settings">${t('td.settings')}</a></span></div>`);
+        <a class="btn btn-small btn-ghost" href="#/moodle">${t('td.moodleOpen')}</a></span></div>`);
     }
     return out.length ? `<div class="td-alerts">${out.join('')}</div>` : '';
   }

@@ -132,19 +132,30 @@
 
   /* ---------- the calendar link (same rules as the Edge Function and the SQL check) ---------- */
   Mo.HOST_RE = /^moodle\d{0,2}\.technion\.ac\.il$/;
-  /** null when `raw` is a Technion Moodle calendar export link, else a Hebrew explanation. */
-  Mo.checkLink = (raw) => {
+  /** null when `raw` is a Technion Moodle calendar export link, else a short problem code (the UI translates it). */
+  Mo.checkLinkCode = (raw) => {
     const s = String(raw || '').trim();
-    if (!s) return 'הדבק את הקישור מהמודל';
-    if (s.length > 600) return 'הקישור ארוך מדי';
+    if (!s) return 'empty';
+    if (s.length > 600) return 'too-long';
     let u;
-    try { u = new URL(s); } catch (e) { return 'זה לא נראה כמו קישור'; }
-    if (u.protocol !== 'https:' || u.port || u.username || u.password) return 'הקישור חייב להתחיל ב-https:// ולהיות של מודל הטכניון';
-    if (!Mo.HOST_RE.test(u.hostname)) return 'זה לא קישור של מודל הטכניון (moodle…technion.ac.il)';
-    if (u.pathname !== '/calendar/export_execute.php') return 'זה לא קישור ייצוא של לוח השנה. במודל: לוח שנה ← ייצוא לוח שנה ← קבל כתובת לוח שנה';
-    if (!u.searchParams.get('authtoken') || !u.searchParams.get('userid')) return 'בקישור חסרים חלקים (userid / authtoken). העתק אותו שוב במלואו';
+    try { u = new URL(s); } catch (e) { return 'not-url'; }
+    if (u.protocol !== 'https:' || u.port || u.username || u.password) return 'not-https';
+    if (!Mo.HOST_RE.test(u.hostname)) return 'not-technion';
+    if (u.pathname !== '/calendar/export_execute.php') return 'not-export';
+    if (!u.searchParams.get('authtoken') || !u.searchParams.get('userid')) return 'missing-parts';
     return null;
   };
+  const LINK_HE = {
+    empty: 'הדבק את הקישור מהמודל',
+    'too-long': 'הקישור ארוך מדי',
+    'not-url': 'זה לא נראה כמו קישור',
+    'not-https': 'הקישור חייב להתחיל ב-https:// ולהיות של מודל הטכניון',
+    'not-technion': 'זה לא קישור של מודל הטכניון (moodle…technion.ac.il)',
+    'not-export': 'זה לא קישור ייצוא של לוח השנה. במודל: לוח שנה ← ייצוא לוח שנה ← קבל כתובת לוח שנה',
+    'missing-parts': 'בקישור חסרים חלקים (userid / authtoken). העתק אותו שוב במלואו',
+  };
+  /** null when `raw` is a valid link, else a Hebrew explanation (kept for older callers; the UI uses checkLinkCode). */
+  Mo.checkLink = (raw) => { const c = Mo.checkLinkCode(raw); return c ? LINK_HE[c] : null; };
   /** Hide calendar-link secrets inside any text (used on backups, just in case a link was pasted into a note). */
   Mo.redact = (text) => String(text).replace(/(authtoken=)[^&\s"'<>\\]+/gi, '$1***');
   Mo.ensure = (st) => {
@@ -617,7 +628,8 @@
   Mo.rangeInfo = (preset, what) => {
     const r = Mo.RANGES[preset] || { label: preset ? preset : 'לא ידוע', ok: !!preset, text: preset ? '' : 'לא ידוע מה הקישור מבקש (נשמר לפני העדכון). שמירה מחדש של הקישור תפתור את זה.' };
     const whatWarn = what && what !== 'all' ? 'הקישור לא כולל "כל האירועים" — אירועים כלליים או אישיים לא יגיעו. מומלץ להפיק קישור עם "כל האירועים".' : '';
-    return Object.assign({}, r, { whatWarn, warn: r.ok === false || !!whatWarn });
+    const key = Mo.RANGES[preset] ? preset : preset ? 'other' : 'unknown'; // for translated labels in the UI
+    return Object.assign({}, r, { key, whatWarn, warn: r.ok === false || !!whatWarn });
   };
 
   /** Short Hebrew summary of a merge() result. */

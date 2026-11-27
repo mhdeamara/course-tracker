@@ -74,6 +74,18 @@ test('agenda: an item that is the same event as an exam (same course, same date,
   assert.equal(new Set(got).size, got.length);
 });
 
+test('agenda: distinct items with similar names on an exam date stay visible (whole words, one item per exam)', () => {
+  const c = withExams(course('י', [['x', [
+    item('בוחן 10', { due: '2026-12-01' }), item('הכנה למבחן', { due: '2026-12-02' }), item('תרגיל 1', { due: '2026-12-03' }),
+    item('בוחן 2', { due: '2026-12-04' }), item('בוחן', { due: '2026-12-04' }),
+  ]]]), [exam('בוחן 1', '2026-12-01'), exam('מבחן', '2026-12-02'), exam('1', '2026-12-03'), exam('בוחן', '2026-12-04')]);
+  const got = st.agenda([c], TODAY, 14).map((x) => (x.kind === 'exam' ? `exam:${x.exam.label}` : x.item.title));
+  assert.deepEqual(got, ['exam:בוחן 1', 'בוחן 10', 'exam:מבחן', 'הכנה למבחן', 'exam:1', 'תרגיל 1', 'exam:בוחן', 'בוחן 2']);
+  // two exams with the same name on the same day are two events: both stay, and each can absorb its own item
+  const d = withExams(course('כ', [['x', [item('בוחן', { due: '2026-12-04' }), item('בוחן', { due: '2026-12-04' })]]]), [exam('בוחן', '2026-12-04'), exam('בוחן', '2026-12-04')]);
+  assert.deepEqual(st.agenda([d], TODAY, 14).map((x) => x.kind), ['exam', 'exam']);
+});
+
 test('agenda: the same course listed twice never duplicates an entry', () => {
   const c = withExams(course('ט', [['a', [item('x', { due: '2026-11-27' })]]]), [exam('מועד', '2026-11-28', 'ex1')]);
   assert.equal(st.agenda([c, c], TODAY).length, 2);

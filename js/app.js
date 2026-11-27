@@ -10,8 +10,8 @@
 
   /* Four primary destinations (sidebar / icon rail / bottom bar). Every old route belongs to one of them;
    * `subs` is the secondary navigation shown under the destination (sidebar) or as a strip (rail, phone).
-   * "קורסים" opens the active semester's course list (#/courses) and "AI" opens the existing chat panel
-   * until their dedicated pages arrive (stages D, E). Labels are i18n keys. */
+   * "קורסים" opens the active semester's course list (#/courses) and "AI" the AI page (#/ai); the quick AI panel
+   * stays on the floating button and the A key. Labels are i18n keys. */
   const DESTS = [
     { id: 'today', label: 'dest.today', icon: 'sun', href: '#/', routes: ['', 'schedule', 'xp', 'adhkar'],
       subs: [['', 'sub.overview'], ['schedule', 'sub.schedule'], ['xp', 'sub.xp'], ['adhkar', 'sub.adhkar']] },
@@ -19,7 +19,7 @@
       subs: [['courses', 'sub.courses'], ['moodle', 'sub.moodle'], ['review', 'sub.review'], ['archive', 'sub.archive']] },
     { id: 'degree', label: 'dest.degree', icon: 'cap', href: '#/grades', routes: ['grades', 'catalog', 'semesters', 'stats'],
       subs: [['grades', 'sub.grades'], ['catalog', 'sub.catalog'], ['semesters', 'sub.semesters'], ['stats', 'sub.stats']] },
-    { id: 'ai', label: 'dest.ai', icon: 'spark', action: 'ai', routes: [], subs: [] },
+    { id: 'ai', label: 'dest.ai', icon: 'spark', href: '#/ai', routes: ['ai'], subs: [] },
   ];
   const destOf = (route) => DESTS.find((d) => d.routes.includes(route)) || null;
   const subShown = ([r]) => r === '' || r === 'courses' || (r === 'xp' ? !!(CT.views.xp && CT.views.xp.chipHTML()) : navShown([r]));
@@ -80,7 +80,7 @@
 
   /* pages whose interface is fully translated: #main follows the interface language there; elsewhere it stays
    * Hebrew/RTL content until those pages are translated */
-  const TRANSLATED = new Set(['', 'courses', 'course']);
+  const TRANSLATED = new Set(['', 'courses', 'course', 'moodle', 'ai']);
   function markMain(main, translated) {
     if (translated) { main.removeAttribute('data-ct-content'); I18N.localized(main); }
     else { main.removeAttribute('data-ct-localized'); I18N.content(main); }
@@ -106,6 +106,7 @@
       moodle: () => views.moodle.render(main, params),
       xp: () => views.xp.render(main, params),
       adhkar: () => views.adhkar.render(main, params),
+      ai: () => views.ai.render(main, params),
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
     const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
@@ -181,9 +182,10 @@
       ? `<button type="button" class="${cls}-item" data-dest="${d.id}" aria-haspopup="dialog" title="${label}">${inner}</button>`
       : `<a href="${d.href}" class="${cls}-item${on ? ' active' : ''}" data-dest="${d.id}" title="${label}"${on ? ' aria-current="true"' : ''}>${inner}</a>`;
   };
-  const onDest = (e) => {
-    const b = e.target.closest('[data-dest="ai"]');
-    if (b && CT.views.ai) { e.preventDefault(); CT.views.ai.open(); }
+  const onDest = (e) => { // a destination with an action (none today) instead of a page
+    const b = e.target.closest('button[data-dest]');
+    const d = b && DESTS.find((x) => x.id === b.dataset.dest);
+    if (d && d.action === 'ai' && CT.views.ai) { e.preventDefault(); CT.views.ai.open(); }
   };
 
   /** Sidebar: brand + collapse toggle, the four destinations (subs under the current one), settings and backup/sync status. */

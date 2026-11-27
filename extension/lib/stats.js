@@ -118,19 +118,31 @@
 
   /**
    * "היום" → upcoming: open dated items (overdue + the next `days` days) and exams (the next `examDays` days) in one
-   * list, sorted by date. Each thing appears once: an item that is the same event as an exam of its course (same date,
-   * one title contains the other — e.g. a Moodle "בוחן" next to the course's own quiz date) is shown only as the exam.
+   * list, sorted by date. Each thing appears once: an item that is the same event as an exam of its course is shown
+   * only as the exam. Same event = same course, same date, and the words of one title are all words of the other
+   * (e.g. a Moodle "בוחן 1" next to the course's own quiz "בוחן"), with at least one word that is not a number. Whole
+   * words only, so "בוחן 10" ≠ "בוחן 1" and "הכנה למבחן" ≠ "מבחן"; each exam absorbs at most one item (an exact match
+   * first), so two distinct items never disappear behind one exam.
    */
   st.agenda = (courses, today = u.today(), days = 7, examDays = 21) => {
     const limit = u.addDays(today, days), exLimit = u.addDays(today, examDays);
-    const norm = (s) => String(s || '').replace(/["'׳״`\s.\-–—_()]/g, '').toLowerCase();
+    const words = (s) => String(s || '').toLowerCase().replace(/["'׳״`.,:;!?()[\]{}\-–—_/\\]/g, ' ').split(/\s+/).filter(Boolean);
+    const sameWords = (a, b) => { // every word of the shorter title is a word of the longer one
+      const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+      return s.some((w) => !/^\d+$/.test(w)) && s.every((w) => l.includes(w));
+    };
     const out = [];
     const seen = new Set();
     const exams = courses.flatMap((c) => (c.exams || []).filter((e) => e.date && e.date >= today && e.date <= exLimit).map((e) => ({ kind: 'exam', date: e.date, exam: e, course: c })));
-    const sameAsExam = (x) => exams.some((e) => e.course.id === x.course.id && e.date === x.item.due
-      && norm(e.exam.label) && (norm(x.item.title).includes(norm(e.exam.label)) || norm(e.exam.label).includes(norm(x.item.title))));
-    courses.flatMap(allItems)
-      .filter((x) => x.item.status !== 'done' && x.item.due && x.item.due <= limit && !sameAsExam(x))
+    const open = courses.flatMap(allItems).filter((x) => x.item.status !== 'done' && x.item.due && x.item.due <= limit);
+    const absorbed = new Set();
+    exams.forEach((e) => {
+      const lw = words(e.exam.label);
+      const cands = open.filter((x) => !absorbed.has(x.item.id) && x.course.id === e.course.id && x.item.due === e.date && sameWords(words(x.item.title), lw));
+      const best = cands.find((x) => words(x.item.title).join(' ') === lw.join(' ')) || cands[0];
+      if (best) absorbed.add(best.item.id);
+    });
+    open.filter((x) => !absorbed.has(x.item.id))
       .forEach((x) => { if (!seen.has(x.item.id)) { seen.add(x.item.id); out.push(Object.assign({ kind: 'item', date: x.item.due }, x)); } });
     exams.forEach((e) => {
       const key = `${e.course.id}|${e.exam.id || ''}|${e.exam.label || ''}|${e.date}`;

@@ -32,7 +32,7 @@
     const C = CT.cloud;
     const remind = !!(b && b.needsReminder && b.needsReminder());
     return {
-      moodle: { unseen: Mo ? Mo.unseen(st) : {}, lastChangeAt, error: m.linkError || null, inbox: m.inbox || [] },
+      moodle: { unseen: Mo ? Mo.unseen(st) : {}, lastChangeAt, error: m.linkError ? Object.assign({}, m.linkError, { message: CT.views.moodle.errorText(m.linkError) }) : null, inbox: m.inbox || [] },
       backup: { status: b ? b.status : 'none', remind, days: remind ? b.daysSinceBackup() : null, lastKey: (st.settings.lastBackup || '').slice(0, 10) },
       cloud: { enabled: !!(C && C.enabled), signedIn: !!(C && C.signedIn()), status: C ? C.status : 'off' },
       xp: CT.views.xp && CT.views.xp.noticeData ? CT.views.xp.noticeData() : null,
@@ -209,7 +209,7 @@
   const ACTIONS = {
     'moodle-open': () => go('#/moodle'),
     'moodle-seen': () => CT.views.moodle.markSeen(),
-    'moodle-inbox': () => { V.close(false); CT.views.moodle.showInbox(); }, // the inbox lives in settings
+    'moodle-inbox': () => { V.close(false); CT.views.moodle.showInbox(); }, // the not-assigned list on the Moodle page
     settings: () => go('#/settings'),
     export: () => CT.backup.exportFile(),
     snooze: () => CT.backup.snooze(),

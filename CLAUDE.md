@@ -56,6 +56,7 @@ Preserve light and dark themes, existing CSS variables and components. Mobile fi
 - Shared modules (utils, game, stats, adhkar, ext-snapshot) → `node tools/ext-sync.mjs`, then `tests/ext.test.js`.
 - Catalogs → `node tools/validate-catalogs.js` (rebuilds `catalogs/bundle.js`; review its diff).
 - AI tools → keep browser schemas and `CHAT_TOOLS` identical; run `agent-tools` and `ai-function` tests.
+- AI provider specifics (name, models, prices, message format) live only in `js/ai-provider.js` (+ server `supabase/functions/ai/`), never in `js/views/chat.js` / `js/views/ai.js` (`ai-chat` test enforces).
 - State/sync → check migration, old data, undo, backups, conflict and offline.
 - UI → browser check on desktop + mobile, light + dark, when a browser is available.
 - Frontend release → bump the `CACHE` name in `sw.js`; check update and offline behaviour.
