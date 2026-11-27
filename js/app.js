@@ -7,19 +7,31 @@
   const app = {};
   CT.app = app;
 
-  const NAV = [
-    ['', 'דשבורד', 'home'],
-    ['moodle', 'המודל שלי', 'download'],
-    ['schedule', 'מערכת שעות', 'calendar'],
-    ['review', 'חזרה למבחן', 'star'],
-    ['catalog', 'תכנית לימודים', 'book'],
-    ['semesters', 'סמסטרים', 'layers'],
-    ['grades', 'ממוצע וציונים', 'award'],
-    ['stats', 'סטטיסטיקות', 'chart'],
-    ['archive', 'ארכיון', 'archive'],
-    ['adhkar', 'אזכרות', 'moon'],
-    ['settings', 'הגדרות', 'gear'],
+  /* Four primary destinations (sidebar / icon rail / bottom bar). Every old route belongs to one of them;
+   * `subs` is the secondary navigation shown under the destination (sidebar) or as a strip (rail, phone).
+   * "קורסים" opens the active semester's course list (#/courses) and "AI" opens the existing chat panel
+   * until their dedicated pages arrive (stages D, E). */
+  const DESTS = [
+    { id: 'today', label: 'היום', icon: 'sun', href: '#/', routes: ['', 'schedule', 'xp', 'adhkar'],
+      subs: [['', 'סקירה'], ['schedule', 'מערכת שעות'], ['xp', 'נקודות ויעדים'], ['adhkar', 'אזכרות']] },
+    { id: 'courses', label: 'קורסים', icon: 'book', href: '#/courses', routes: ['courses', 'course', 'moodle', 'review', 'archive'],
+      subs: [['courses', 'הקורסים שלי'], ['moodle', 'המודל שלי'], ['review', 'חזרה למבחן'], ['archive', 'ארכיון']] },
+    { id: 'degree', label: 'התואר', icon: 'cap', href: '#/grades', routes: ['grades', 'catalog', 'semesters', 'stats'],
+      subs: [['grades', 'ממוצע וציונים'], ['catalog', 'תכנית לימודים'], ['semesters', 'סמסטרים'], ['stats', 'סטטיסטיקות']] },
+    { id: 'ai', label: 'AI', icon: 'spark', action: 'ai', routes: [], subs: [] },
   ];
+  const destOf = (route) => DESTS.find((d) => d.routes.includes(route)) || null;
+  const subShown = ([r]) => r === '' || r === 'courses' || (r === 'xp' ? !!(CT.views.xp && CT.views.xp.chipHTML()) : navShown([r]));
+
+  /* sidebar: full (default) or icon rail — a per-device preference, like the theme */
+  app.sidebar = () => { try { return localStorage.getItem('ct.sidebar') === 'rail' ? 'rail' : 'full'; } catch (e) { return 'full'; } };
+  app.setSidebar = (m) => {
+    try { localStorage.setItem('ct.sidebar', m); } catch (e) { /* ignore */ }
+    applySidebar();
+    app.rerender();
+  };
+  function applySidebar() { document.documentElement.dataset.sb = app.sidebar(); }
+  applySidebar();
 
   /* ---------- theme ---------- */
   app.theme = () => { try { return localStorage.getItem('ct.theme') || 'auto'; } catch (e) { return 'auto'; } };
@@ -80,13 +92,15 @@
       catalog: () => views.catalog.render(main, params),
       semesters: () => views.semesters.render(main, { id, ...params }),
       grades: () => views.gpa.render(main, params),
+      // course list of the active semester (the semester page) until the dedicated courses page (stage D)
+      courses: () => views.semesters.render(main, { ...params, id: S.state.settings.activeSemesterId }),
       settings: () => views.settings.render(main, params),
       moodle: () => views.moodle.render(main, params),
       xp: () => views.xp.render(main, params),
       adhkar: () => views.adhkar.render(main, params),
     };
     const routeKey = route === 'grades' ? 'gpa' : route;
-    const fn = map[route] && (route === '' || route === 'course' || views[routeKey]) ? map[route] : map[''];
+    const fn = map[route] && (route === '' || route === 'course' || (route === 'courses' ? views.semesters : views[routeKey])) ? map[route] : map[''];
     const pathNow = location.hash.split('?')[0];
     const entering = app.lastPath !== pathNow; // a new page (not a re-render after an edit) fades in
     app.lastPath = pathNow;
@@ -95,13 +109,9 @@
       main.classList.remove('route-in'); void main.offsetWidth; main.classList.add('route-in');
       clearTimeout(app.routeTimer); app.routeTimer = setTimeout(() => main.classList.remove('route-in'), 600);
     }
-    // nav state
-    document.querySelectorAll('.nav a').forEach((a) => {
-      const on = a.dataset.route === route;
-      a.classList.toggle('active', on);
-      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-    });
-    renderSidebar(route, id);
+    const navRoute = fn === map[''] ? '' : route; // unknown routes show the home page, so "היום" is current
+    renderNav(navRoute);
+    renderSidebar(navRoute);
     paintSyncDot();
     if (app.lastRoute === location.hash && !params.item) window.scrollTo(0, scrollY);
     app.lastRoute = location.hash;
@@ -143,44 +153,75 @@
     if (parseHash().route === 'settings' && !document.querySelector('.settings :focus')) app.rerender();
   };
 
-  /** Desktop sidebar: navigation, quick course list with progress, backup status. */
-  function renderSidebar(route, id) {
-    const sb = document.getElementById('sidebar');
+  const backupLine = () => {
     const b = CT.backup;
     const days = b.daysSinceBackup();
-    const backupLine = b.status === 'granted'
-      ? '<span class="sb-dot ok"></span>שמירה אוטומטית פעילה'
-      : b.status === 'needs-permission'
-        ? '<span class="sb-dot warn"></span>שמירה אוטומטית ממתינה לאישור'
-        : days == null ? '<span class="sb-dot warn"></span>עוד לא גובה'
-          : `<span class="sb-dot ${days > 7 ? 'warn' : 'ok'}"></span>גיבוי אחרון ${days === 0 ? 'היום' : days === 1 ? 'אתמול' : `לפני ${days} ימים`}`;
+    const [cls, text] = b.status === 'granted' ? ['ok', 'שמירה אוטומטית פעילה']
+      : b.status === 'needs-permission' ? ['warn', 'שמירה אוטומטית ממתינה לאישור']
+        : days == null ? ['warn', 'עוד לא גובה']
+          : [days > 7 ? 'warn' : 'ok', `גיבוי אחרון ${days === 0 ? 'היום' : days === 1 ? 'אתמול' : `לפני ${days} ימים`}`];
+    return `<span class="sb-dot ${cls}"></span><span class="sb-label">${text}</span>`;
+  };
+  const destLink = (d, cur, cls) => {
+    const on = cur === d;
+    const inner = `${icon[d.icon]}<span class="${cls}-label">${d.label}</span>`;
+    return d.action
+      ? `<button type="button" class="${cls}-item" data-dest="${d.id}" aria-haspopup="dialog" title="${d.label}">${inner}</button>`
+      : `<a href="${d.href}" class="${cls}-item${on ? ' active' : ''}" data-dest="${d.id}" title="${d.label}"${on ? ' aria-current="true"' : ''}>${inner}</a>`;
+  };
+  const onDest = (e) => {
+    const b = e.target.closest('[data-dest="ai"]');
+    if (b && CT.views.ai) { e.preventDefault(); CT.views.ai.open(); }
+  };
+
+  /** Sidebar: brand + collapse toggle, the four destinations (subs under the current one), settings and backup/sync status. */
+  function renderSidebar(route) {
+    const sb = document.getElementById('sidebar');
+    const cur = destOf(route);
+    const rail = app.sidebar() === 'rail';
     sb.innerHTML = `
-      <a href="#/" class="sb-brand"><span class="sb-logo" aria-hidden="true">📚</span><span>הקורסים שלי</span></a>
-      ${CT.views.xp ? CT.views.xp.chipHTML() : ''}
-      <nav class="sb-nav">
-        ${NAV.filter(navShown).map(([r, l, ic]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}" ${route === r ? 'aria-current="page"' : ''}>${icon[ic]}<span>${l}</span></a>`).join('')}
-      </nav>
-      <div class="sb-section">
-        <div class="sb-title"><span>קורסים${S.semester(S.state.settings.activeSemesterId) ? ` · ${esc(S.semester(S.state.settings.activeSemesterId).name)}` : ''}</span><button class="icon-btn sb-add" data-sb="new" aria-label="קורס חדש" title="קורס חדש">${icon.plus}</button></div>
-        <div class="sb-courses">
-          ${S.semesterCourses().map((c) => {
-            const p = CT.stats.courseProgress(c);
-            const on = route === 'course' && id === c.id;
-            const fin = CT.model.isFinished(c);
-            return `<a href="#/course/${c.id}" class="sb-course${on ? ' active' : ''}${fin ? ' finished' : ''}" style="--c:${esc(c.color)}" ${on ? 'aria-current="page"' : ''}>
-              <span class="dot"></span><span class="sb-name" dir="auto">${esc(c.name)}</span><span class="sb-pct">${fin ? '✓' : `${p.pct}%`}</span></a>`;
-          }).join('')}
-        </div>
+      <div class="sb-top">
+        <a href="#/" class="sb-brand" title="הקורסים שלי"><span class="sb-logo" aria-hidden="true">${icon.check}</span><span class="sb-label">הקורסים שלי</span></a>
+        <button type="button" class="icon-btn sb-toggle" id="sb-toggle" aria-controls="sidebar" aria-expanded="${!rail}" aria-label="${rail ? 'הרחבת התפריט' : 'כיווץ התפריט'}" title="${rail ? 'הרחבת התפריט' : 'כיווץ התפריט'}">${icon.sidebar}</button>
       </div>
-      <a href="#/settings" class="sb-foot" id="sb-foot">${CT.cloud && CT.cloud.enabled ? syncLine() : backupLine}</a>`;
-    sb.querySelector('[data-sb=new]').onclick = () => CT.views.course.courseForm();
+      <nav class="sb-nav" aria-label="ניווט ראשי">
+        ${DESTS.map((d) => destLink(d, cur, 'sb') + (cur === d && d.subs.length ? `<div class="sb-sub">${d.subs.filter(subShown).map(([r, l]) => `<a href="#/${r}" class="${route === r ? 'active' : ''}"${route === r ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</div>` : '')).join('')}
+      </nav>
+      <div class="sb-bottom">
+        <a href="#/settings" class="sb-item${route === 'settings' ? ' active' : ''}" title="הגדרות"${route === 'settings' ? ' aria-current="page"' : ''}>${icon.gear}<span class="sb-label">הגדרות</span></a>
+        <a href="#/settings" class="sb-foot" id="sb-foot">${CT.cloud && CT.cloud.enabled ? syncLine() : backupLine()}</a>
+      </div>`;
+    sb.querySelector('#sb-toggle').onclick = () => app.setSidebar(rail ? 'full' : 'rail');
+    sb.querySelector('.sb-nav').onclick = onDest;
   }
+
+  /** Secondary strip (rail and phone) + bottom bar (phone) + header XP chip — refreshed on every route change. */
+  function renderNav(route) {
+    const cur = destOf(route);
+    const sub = document.getElementById('subnav');
+    if (sub) {
+      const list = cur ? cur.subs.filter(subShown) : [];
+      sub.hidden = list.length < 2;
+      sub.innerHTML = list.map(([r, l]) => `<a href="#/${r}" data-route="${r}" class="${route === r ? 'active' : ''}"${route === r ? ' aria-current="page"' : ''}>${l}</a>`).join('');
+    }
+    const bn = document.getElementById('bottom-nav');
+    if (bn) { bn.innerHTML = DESTS.map((d) => destLink(d, cur, 'bn')).join(''); bn.onclick = onDest; }
+    const t = document.getElementById('hd-title');
+    if (t) t.textContent = route === 'settings' ? 'הגדרות' : cur ? cur.label : '';
+    const xp = document.getElementById('xp-slot');
+    if (xp) xp.innerHTML = CT.views.xp ? CT.views.xp.chipHTML() : '';
+  }
+
+  app.openSearch = () => {
+    document.getElementById('app-header').classList.add('search-open');
+    document.getElementById('search').focus();
+  };
 
   function renderHeader() {
     const h = document.getElementById('app-header');
     h.innerHTML = `
       <div class="header-inner">
-        <a href="#/" class="brand" aria-label="דשבורד">📚 <span>הקורסים שלי</span></a>
+        <span class="hd-title" id="hd-title"></span>
         <div class="search" role="search">
           ${icon.search}
           <input id="search" type="search" dir="auto" placeholder="חיפוש בקורסים, פריטים והערות…" aria-label="חיפוש גלובלי (קיצור: /)" autocomplete="off">
@@ -189,18 +230,35 @@
         </div>
         <div class="header-actions">
           ${CT.cloud && CT.cloud.enabled ? '<a href="#/settings" id="sync-dot" class="sync-dot warn" aria-label="סנכרון"></a>' : ''}
+          <button type="button" class="icon-btn hd-search" id="search-btn" aria-label="חיפוש (/)">${icon.search}</button>
           <span id="timer-slot"></span>
-          <button class="icon-btn" id="undo-btn" aria-label="ביטול פעולה אחרונה (Ctrl+Z)" title="ביטול (Ctrl+Z)">${icon.undo}</button>
-          <button class="icon-btn" id="help-btn" aria-label="קיצורי מקלדת (?)" title="קיצורי מקלדת (?)">${icon.keyboard}</button>
-          <button class="icon-btn" id="theme-btn"></button>
+          <span id="xp-slot" class="xp-slot"></span>
+          <button type="button" class="icon-btn" id="bell-btn" aria-label="התראות והודעות (בדף היום)" title="התראות והודעות">${icon.bell}</button>
+          <button type="button" class="icon-btn hd-wide" id="undo-btn" aria-label="ביטול פעולה אחרונה (Ctrl+Z)" title="ביטול (Ctrl+Z)">${icon.undo}</button>
+          <button type="button" class="icon-btn hd-wide" id="help-btn" aria-label="קיצורי מקלדת (?)" title="קיצורי מקלדת (?)">${icon.keyboard}</button>
+          <button type="button" class="icon-btn hd-wide" id="theme-btn"></button>
+          <button type="button" class="icon-btn hd-more" id="more-btn" aria-label="עוד פעולות" aria-haspopup="menu">${icon.more}</button>
         </div>
       </div>
-      <nav class="nav" aria-label="ניווט ראשי">
-        ${NAV.filter(navShown).map(([r, l, ic]) => `<a href="#/${r}" data-route="${r}">${icon[ic]}<span>${l}</span></a>`).join('')}
-      </nav>`;
+      <nav class="nav subnav" id="subnav" aria-label="ניווט משני" hidden></nav>`;
     document.getElementById('theme-btn').onclick = () => app.setTheme(isDark() ? 'light' : 'dark');
     document.getElementById('undo-btn').onclick = S.undo;
     document.getElementById('help-btn').onclick = app.showHelp;
+    document.getElementById('search-btn').onclick = app.openSearch;
+    // notices still live on the "היום" page until the notification center (stage C)
+    document.getElementById('bell-btn').onclick = () => {
+      if (parseHash().route !== '') { location.hash = '#/'; return; }
+      const n = document.querySelector('#main .banner');
+      if (n) n.scrollIntoView({ block: 'center', behavior: app.reducedMotion() ? 'auto' : 'smooth' });
+      else ui.toast('אין התראות חדשות');
+    };
+    const more = document.getElementById('more-btn');
+    more.onclick = () => ui.menu(more, [
+      { label: 'הגדרות', icon: 'gear', fn: () => { location.hash = '#/settings'; } },
+      { label: isDark() ? 'מצב בהיר' : 'מצב כהה', icon: isDark() ? 'sun' : 'moon', fn: () => app.setTheme(isDark() ? 'light' : 'dark') },
+      { label: 'ביטול פעולה אחרונה', icon: 'undo', fn: S.undo },
+      { label: 'קיצורי מקלדת', icon: 'keyboard', fn: app.showHelp },
+    ]);
     bindSearch();
     applyTheme();
   }
@@ -268,7 +326,7 @@
     });
     const go = (href) => { box.hidden = true; inp.blur(); location.hash = href; };
     box.addEventListener('mousedown', (e) => { const a = e.target.closest('.sr'); if (a) { e.preventDefault(); go(a.getAttribute('href')); } });
-    inp.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 150));
+    inp.addEventListener('blur', () => setTimeout(() => { box.hidden = true; document.getElementById('app-header').classList.remove('search-open'); }, 150));
   }
 
   /* ---------- keyboard shortcuts ---------- */
@@ -312,7 +370,7 @@
       if (dest !== undefined) { e.preventDefault(); location.hash = `#/${dest}`; return; }
     }
     if (route === 'course' && CT.views.course.onKey(e)) { e.preventDefault(); return; }
-    if (e.key === '/' || e.key === '.') { e.preventDefault(); document.getElementById('search').focus(); return; }
+    if (e.key === '/' || e.key === '.') { e.preventDefault(); app.openSearch(); return; }
     if (e.key === '?') { e.preventDefault(); app.showHelp(); return; }
     if ((e.key === 'g' || e.key === 'ע') && !e.altKey) { gPending = Date.now(); return; }
     if ((e.key === 'n' || e.key === 'מ') && route === '') { e.preventDefault(); CT.views.course.courseForm(); return; }
